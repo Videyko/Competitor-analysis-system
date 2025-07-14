@@ -1,0 +1,36 @@
+FROM python:3.11-slim
+
+# Встановлення системних залежностей
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Створення користувача
+RUN useradd -m -s /bin/bash appuser
+
+# Робоча директорія
+WORKDIR /app
+
+# Копіювання залежностей
+COPY requirements/analysis.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Копіювання коду
+COPY src/analysis_service.py .
+COPY src/shared/ shared/
+
+# Права доступу
+RUN chown -R appuser:appuser /app && \
+    mkdir -p /app/logs /app/data && \
+    chown -R appuser:appuser /app/logs /app/data
+
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+CMD ["python", "analysis_service.py"]

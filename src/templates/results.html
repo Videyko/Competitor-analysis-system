@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Результати аналізів{% endblock %}
+{% block page_type %}results{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="fas fa-chart-bar"></i> Результати аналізів</h1>
+            <div>
+                <a href="/" class="btn btn-outline-primary">
+                    <i class="fas fa-home"></i> Головна
+                </a>
+                <a href="/config/new" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Новий аналіз
+                </a>
+            </div>
+        </div>
+
+        {% if batches %}
+            <!-- Фільтри -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <select class="form-select" id="statusFilter" onchange="filterResults()">
+                                <option value="">Всі статуси</option>
+                                <option value="completed">Завершені</option>
+                                <option value="running">Виконуються</option>
+                                <option value="failed">Провалені</option>
+                                <option value="pending">Очікують</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" class="form-control" id="searchFilter" 
+                                   placeholder="Пошук по назві конфігурації..." 
+                                   onkeyup="filterResults()">
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                                <i class="fas fa-eraser"></i> Очистити
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Статистика -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="stat-card neutral">
+                        <div class="stat-number">{{ batches|length }}</div>
+                        <div class="stat-label">Всього аналізів</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card positive">
+                        <div class="stat-number">{{ batches|selectattr('status', 'equalto', 'completed')|list|length }}</div>
+                        <div class="stat-label">Завершено</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card warning">
+                        <div class="stat-number">{{ batches|selectattr('status', 'equalto', 'running')|list|length }}</div>
+                        <div class="stat-label">Виконується</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card negative">
+                        <div class="stat-number">{{ batches|selectattr('status', 'equalto', 'failed')|list|length }}</div>
+                        <div class="stat-label">Провалено</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Список результатів -->
+            <div class="row" id="resultsContainer">
+                {% for batch in batches %}
+                <div class="col-md-6 mb-4 result-card" 
+                     data-status="{{ batch.status }}" 
+                     data-name="{{ batch.config_name|lower }}">
+                    <div class="card analysis-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">{{ batch.config_name }}</h5>
+                            <span class="badge bg-{% if batch.status == 'completed' %}success{% elif batch.status == 'running' %}primary{% elif batch.status == 'failed' %}danger{% else %}secondary{% endif %}">
+                                {{ batch.status|upper }}
+                            </span>

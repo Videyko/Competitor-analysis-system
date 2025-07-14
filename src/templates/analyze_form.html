@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Запуск аналізу - {{ config.name }}{% endblock %}
+{% block page_type %}analysis{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h1>Запуск аналізу: {{ config.name }}</h1>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Параметри аналізу</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Сайти для аналізу:</h6>
+                        <div class="site-list">
+                            {% for site in config.sites %}
+                            <div class="badge bg-primary me-1 mb-1">{{ site }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Позитивні ключові слова:</h6>
+                        <div class="keyword-list">
+                            {% for keyword in config.positive_keywords %}
+                            <div class="badge bg-success me-1 mb-1">{{ keyword }}</div>
+                            {% endfor %}
+                        </div>
+                        
+                        {% if config.negative_keywords %}
+                        <h6 class="mt-3">Негативні ключові слова:</h6>
+                        <div class="keyword-list">
+                            {% for keyword in config.negative_keywords %}
+                            <div class="badge bg-danger me-1 mb-1">{{ keyword }}</div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Максимальний час:</strong> {{ config.max_time_minutes }} хвилин на сайт</p>
+                        <p><strong>Максимальна кількість посилань:</strong> {{ config.max_links }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Отримувачі звітів:</strong> {{ config.email_recipients|length }}</p>
+                        <p><strong>ШІ аналіз:</strong> 
+                            {% if config.openai_api_key %}
+                                <span class="badge bg-success">Включено</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Відключено</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <form method="POST" action="/config/{{ config.id }}/analyze" class="mt-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-cogs"></i> Налаштування запуску</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="send_email" name="send_email" checked>
+                        <label class="form-check-label" for="send_email">
+                            <i class="fas fa-envelope"></i> Відправити звіти на email після завершення
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="custom_message" class="form-label">Додаткове повідомлення в email</label>
+                        <textarea class="form-control" id="custom_message" name="custom_message" 
+                                  placeholder="Опціонально: додайте власне повідомлення до звітів" rows="3"></textarea>
+                        <div class="form-text">Це повідомлення буде включено у всі email звіти</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-between mt-4">
+                <a href="/" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Назад
+                </a>
+                <button type="submit" class="btn btn-success btn-lg">
+                    <i class="fas fa-play"></i> Запустити аналіз
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-clock"></i> Очікуваний час</h5>
+            </div>
+            <div class="card-body">
+                <div class="stats">
+                    <div class="stat-card neutral">
+                        <div class="stat-number">{{ config.sites|length }}</div>
+                        <div class="stat-label">Сайтів</div>
+                    </div>
+                </div>
+                
+                <p class="mt-3">Приблизний час аналізу:</p>
+                <ul>
+                    <li><strong>{{ config.sites|length }} сайтів</strong> × {{ config.max_time_minutes }} хв</li>
+                    <li><strong>Загалом:</strong> {{ config.sites|length * config.max_time_minutes }} хвилин</li>
+                </ul>
+                <hr>
+                <p><small class="text-muted">
+                    Час може варіюватися залежно від розміру сайтів та складності аналізу.
+                </small></p>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-envelope"></i> Email звіти</h5>
+            </div>
+            <div class="card-body">
+                <p>Звіти будуть відправлені на:</p>
+                <ul>
+                    {% for email in config.email_recipients %}
+                    <li>{{ email }}</li>
+                    {% endfor %}
+                </ul>
+                <hr>
+                <p><small class="text-muted">
+                    Кожен сайт отримає окремий детальний звіт з HTML форматуванням та Excel вкладенням.
+                </small></p>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-pie"></i> Що буде проаналізовано</h5>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong>Контент сторінок:</strong> текст, заголовки, описи</li>
+                    <li><strong>Ключові слова:</strong> точний пошук і контекст</li>
+                    <li><strong>Згадки конкурентів:</strong> виявлення порушень</li>
+                    <li><strong>Статистика:</strong> кількість згадок по сторінках</li>
+                    {% if config.openai_api_key %}
+                    <li><strong>ШІ аналіз:</strong> оцінка якості співпраці</li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

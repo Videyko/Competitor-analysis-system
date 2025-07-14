@@ -1,0 +1,206 @@
+version: '3.8'
+
+services:
+  # Redis для кешування та черг
+  redis:
+    image: redis:7-alpine
+    container_name: competitor_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-defaultpassword}
+    networks:
+      - competitor_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL база даних
+  postgres:
+    image: postgres:15-alpine
+    container_name: competitor_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-competitor_db}
+      POSTGRES_USER: ${POSTGRES_USER:-competitor_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-competitor_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - competitor_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-competitor_user}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Основний сервіс аналізу
+  analysis-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.analysis
+    container_name: competitor_analysis
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-defaultpassword}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-competitor_user}:${POSTGRES_PASSWORD:-competitor_pass}@postgres:5432/${POSTGRES_DB:-competitor_db}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MAX_WORKERS=${MAX_WORKERS:-5}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - competitor_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Email сервіс
+  email-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.email
+    container_name: competitor_email
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-defaultpassword}@redis:6379/1
+      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - ANALYSIS_SERVICE_URL=http://analysis-service:8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - competitor_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      analysis-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Веб-інтерфейс
+  web-interface:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: competitor_web
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-defaultpassword}@redis:6379/2
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-competitor_user}:${POSTGRES_PASSWORD:-competitor_pass}@postgres:5432/${POSTGRES_DB:-competitor_db}
+      - ANALYSIS_SERVICE_URL=http://analysis-service:8000
+      - EMAIL_SERVICE_URL=http://email-service:8001
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - competitor_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      analysis-service:
+        condition: service_healthy
+      email-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx reverse proxy
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: competitor_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - competitor_network
+    depends_on:
+      - web-interface
+      - analysis-service
+      - email-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Моніторинг
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: competitor_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - competitor_network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: competitor_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    networks:
+      - competitor_network
+    profiles:
+      - monitoring
+
+networks:
+  competitor_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

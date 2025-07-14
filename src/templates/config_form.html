@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Аналіз конкурентів{% endblock %}
+{% block page_type %}config{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h1>{{ title }}</h1>
+        
+        <form method="POST" action="/config/save" class="mt-4 needs-validation" novalidate>
+            {% if config %}
+            <input type="hidden" name="config_id" value="{{ config.id }}">
+            {% endif %}
+            
+            <div class="mb-3">
+                <label for="name" class="form-label">Назва конфігурації <span class="text-danger">*</span></label>
+                <input type="text" class="form-control auto-save" id="name" name="name" 
+                       value="{{ config.name if config else '' }}" required>
+                <div class="invalid-feedback">
+                    Будь ласка, введіть назву конфігурації
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="sites" class="form-label">Сайти для аналізу <span class="text-danger">*</span></label>
+                <textarea class="form-control form-textarea auto-save" id="sites" name="sites" 
+                          placeholder="https://example1.com&#10;https://example2.com&#10;https://example3.com" 
+                          required>{{ '\n'.join(config.sites) if config else '' }}</textarea>
+                <div class="form-text">Кожен сайт з нового рядка (наприклад: https://example.com)</div>
+                <div class="invalid-feedback">
+                    Будь ласка, введіть принаймні один валідний URL
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="positive_keywords" class="form-label">Позитивні ключові слова <span class="text-danger">*</span></label>
+                        <textarea class="form-control form-textarea auto-save" id="positive_keywords" name="positive_keywords" 
+                                  placeholder="ваш бренд&#10;ваш продукт&#10;ваша компанія" 
+                                  required>{{ '\n'.join(config.positive_keywords) if config else '' }}</textarea>
+                        <div class="form-text">Слова, які потрібно знайти (кожне з нового рядка)</div>
+                        <div class="invalid-feedback">
+                            Будь ласка, введіть принаймні одне ключове слово
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="negative_keywords" class="form-label">Негативні ключові слова</label>
+                        <textarea class="form-control form-textarea auto-save" id="negative_keywords" name="negative_keywords" 
+                                  placeholder="конкурент 1&#10;конкурент 2&#10;конкурент 3">{{ '\n'.join(config.negative_keywords) if config else '' }}</textarea>
+                        <div class="form-text">Слова конкурентів (опціонально)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="max_time_minutes" class="form-label">Максимальний час аналізу (хвилини)</label>
+                        <input type="number" class="form-control" id="max_time_minutes" name="max_time_minutes" 
+                               value="{{ config.max_time_minutes if config else 20 }}" min="1" max="60">
+                        <div class="form-text">Час на аналіз одного сайту</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="max_links" class="form-label">Максимальна кількість посилань</label>
+                        <input type="number" class="form-control" id="max_links" name="max_links" 
+                               value="{{ config.max_links if config else 300 }}" min="10" max="1000">
+                        <div class="form-text">Кількість сторінок для сканування</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="openai_api_key" class="form-label">OpenAI API ключ</label>
+                <input type="password" class="form-control" id="openai_api_key" name="openai_api_key" 
+                       value="{{ config.openai_api_key if config else '' }}" 
+                       placeholder="sk-...">
+                <div class="form-text">Для генерації ШІ аналізу результатів (опціонально)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="email_recipients" class="form-label">Отримувачі звітів <span class="text-danger">*</span></label>
+                <textarea class="form-control form-textarea auto-save" id="email_recipients" name="email_recipients" 
+                          placeholder="manager@company.com&#10;analyst@company.com&#10;team@company.com" 
+                          required>{{ '\n'.join(config.email_recipients) if config else '' }}</textarea>
+                <div class="form-text">Email адреси для отримання звітів (кожну з нового рядка)</div>
+                <div class="invalid-feedback">
+                    Будь ласка, введіть принаймні одну валідну email адресу
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <a href="/" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Назад
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Зберегти конфігурацію
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-lightbulb"></i> Підказки</h5>
+            </div>
+            <div class="card-body">
+                <h6>Формат URL сайтів:</h6>
+                <ul>
+                    <li>https://example.com</li>
+                    <li>https://www.example.com</li>
+                    <li>http://example.com</li>
+                </ul>
+                
+                <h6>Ключові слова:</h6>
+                <ul>
+                    <li>Регістр не важливий</li>
+                    <li>Можна використовувати фрази</li>
+                    <li>Кожне слово/фраза з нового рядка</li>
+                </ul>
+                
+                <h6>Налаштування:</h6>
+                <ul>
+                    <li>Більше посилань = детальніший аналіз</li>
+                    <li>Більше часу = повніший огляд</li>
+                    <li>ШІ аналіз покращує звіти</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line"></i> Приклад результату</h5>
+            </div>
+            <div class="card-body">
+                <p>Після аналізу ви отримаєте:</p>
+                <ul>
+                    <li><strong>HTML звіт</strong> на email</li>
+                    <li><strong>Excel файл</strong> з детальними даними</li>
+                    <li><strong>Список сторінок</strong> з кожним ключовим словом</li>
+                    <li><strong>ШІ рекомендації</strong> для покращення</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Завантаження автозбережених даних при завантаженні сторінки
+document.addEventListener('DOMContentLoaded', function() {
+    const app = window.CompetitorAnalysisApp;
+    if (app && app.loadAutoSavedData) {
+        app.loadAutoSavedData();
+    }
+});
+</script>
+{% endblock %}

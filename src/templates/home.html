@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Головна - Аналіз конкурентів{% endblock %}
+{% block page_type %}home{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="fas fa-chart-line"></i> Конфігурації аналізу</h1>
+            <a href="/config/new" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Нова конфігурація
+            </a>
+        </div>
+
+        {% if configs %}
+            <div class="row">
+                {% for config in configs %}
+                <div class="col-md-6 mb-4">
+                    <div class="card fade-in">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ config.name }}</h5>
+                            <p class="card-text">
+                                <strong>Сайтів:</strong> {{ config.sites|length }}<br>
+                                <strong>Позитивних слів:</strong> {{ config.positive_keywords|length }}<br>
+                                <strong>Негативних слів:</strong> {{ config.negative_keywords|length }}<br>
+                                <strong>Отримувачів:</strong> {{ config.email_recipients|length }}
+                            </p>
+                            {% if config.last_analysis %}
+                            <small class="text-muted">
+                                <i class="fas fa-clock"></i> Останній аналіз: {{ config.last_analysis.strftime('%d.%m.%Y %H:%M') }}
+                            </small>
+                            {% endif %}
+                        </div>
+                        <div class="card-footer d-flex justify-content-between">
+                            <div>
+                                <a href="/config/{{ config.id }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-edit"></i> Редагувати
+                                </a>
+                                <a href="/config/{{ config.id }}/analyze" class="btn btn-success btn-sm">
+                                    <i class="fas fa-play"></i> Запустити
+                                </a>
+                            </div>
+                            <button class="btn btn-outline-danger btn-sm delete-btn" 
+                                    data-type="config" 
+                                    data-id="{{ config.id }}" 
+                                    data-name="{{ config.name }}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="alert alert-info alert-custom">
+                <i class="fas fa-info-circle"></i>
+                <strong>Поки що немає конфігурацій.</strong>
+                <a href="/config/new">Створіть першу конфігурацію</a> для початку аналізу.
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Інформація</h5>
+            </div>
+            <div class="card-body">
+                <p>Цей сервіс дозволяє:</p>
+                <ul>
+                    <li>Створювати конфігурації для аналізу сайтів</li>
+                    <li>Шукати позитивні та негативні ключові слова</li>
+                    <li>Отримувати детальні звіти на email</li>
+                    <li>Аналізувати кілька сайтів одночасно</li>
+                </ul>
+                <hr>
+                <h6>Статистика:</h6>
+                <div class="stats">
+                    <div class="stat-card neutral">
+                        <div class="stat-number">{{ configs|length }}</div>
+                        <div class="stat-label">Конфігурацій</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-lightbulb"></i> Швидкий старт</h5>
+            </div>
+            <div class="card-body">
+                <ol>
+                    <li><strong>Створіть конфігурацію</strong> з URL сайтів для аналізу</li>
+                    <li><strong>Додайте ключові слова</strong> що хочете знайти</li>
+                    <li><strong>Вкажіть email адреси</strong> для отримання звітів</li>
+                    <li><strong>Запустіть аналіз</strong> та отримайте результати</li>
+                </ol>
+                <a href="/config/new" class="btn btn-primary w-100">
+                    <i class="fas fa-rocket"></i> Розпочати
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
