@@ -56,19 +56,28 @@
                 </div>
                 <div class="col-md-3">
                     <div class="stat-card positive">
-                        <div class="stat-number">{{ batches|selectattr('status', 'equalto', 'completed')|list|length }}</div>
+                        <div class="stat-number">
+                            {% set completed = batches | selectattr('status', 'equalto', 'completed') | list %}
+                            {{ completed | length }}
+                        </div>
                         <div class="stat-label">Завершено</div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="stat-card warning">
-                        <div class="stat-number">{{ batches|selectattr('status', 'equalto', 'running')|list|length }}</div>
+                        <div class="stat-number">
+                            {% set running = batches | selectattr('status', 'equalto', 'running') | list %}
+                            {{ running | length }}
+                        </div>
                         <div class="stat-label">Виконується</div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="stat-card negative">
-                        <div class="stat-number">{{ batches|selectattr('status', 'equalto', 'failed')|list|length }}</div>
+                        <div class="stat-number">
+                            {% set failed = batches | selectattr('status', 'equalto', 'failed') | list %}
+                            {{ failed | length }}
+                        </div>
                         <div class="stat-label">Провалено</div>
                     </div>
                 </div>
@@ -86,3 +95,302 @@
                             <span class="badge bg-{% if batch.status == 'completed' %}success{% elif batch.status == 'running' %}primary{% elif batch.status == 'failed' %}danger{% else %}secondary{% endif %}">
                                 {{ batch.status|upper }}
                             </span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center mb-3">
+                                <div class="col-4">
+                                    <small class="text-muted">Сайтів</small>
+                                    <div class="fw-bold">{{ batch.total_sites }}</div>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted">Завершено</small>
+                                    <div class="fw-bold text-success">{{ batch.completed_sites }}</div>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted">Помилок</small>
+                                    <div class="fw-bold text-danger">{{ batch.failed_sites }}</div>
+                                </div>
+                            </div>
+
+                            <!-- Прогрес бар -->
+                            {% set progress = ((batch.completed_sites + batch.failed_sites) / batch.total_sites * 100) | round | int %}
+                            <div class="progress mb-3" style="height: 10px;">
+                                <div class="progress-bar bg-success" style="width: {{ (batch.completed_sites / batch.total_sites * 100) | round | int }}%"></div>
+                                <div class="progress-bar bg-danger" style="width: {{ (batch.failed_sites / batch.total_sites * 100) | round | int }}%"></div>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar"></i> 
+                                    {{ batch.created_at.strftime('%d.%m.%Y %H:%M') }}
+                                </small>
+                                
+                                <div>
+                                    {% if batch.status == 'running' %}
+                                    <button class="btn btn-sm btn-outline-secondary" 
+                                            onclick="refreshBatchStatus('{{ batch.id }}')">
+                                        <i class="fas fa-sync"></i> Оновити
+                                    </button>
+                                    {% endif %}
+                                    
+                                    <a href="/batch/{{ batch.id }}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-eye"></i> Переглянути
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- Email статус -->
+                            {% if batch.send_email %}
+                            <hr>
+                            <div class="d-flex justify-content-between">
+                                <small>
+                                    <i class="fas fa-envelope"></i> Email звіт:
+                                </small>
+                                <small>
+                                    {% if batch.email_sent %}
+                                        <span class="badge bg-success">Відправлено</span>
+                                    {% elif batch.status == 'completed' %}
+                                        <span class="badge bg-warning">Відправляється</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Очікується</span>
+                                    {% endif %}
+                                </small>
+                            </div>
+                            {% endif %}
+
+                            <!-- Детальна інформація -->
+                            {% if batch.analysis_tasks %}
+                            <hr>
+                            <div class="collapse" id="collapse{{ loop.index }}">
+                                <h6>Детально по сайтах:</h6>
+                                <div class="list-group list-group-flush">
+                                    {% for site_url, task_info in batch.analysis_tasks.items() %}
+                                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <div>
+                                            <small class="text-muted">{{ site_url }}</small>
+                                        </div>
+                                        <span class="badge bg-{% if task_info.status == 'completed' %}success{% elif task_info.status == 'failed' %}danger{% else %}warning{% endif %}">
+                                            {{ task_info.status }}
+                                        </span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-link p-0" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                                <i class="fas fa-chevron-down"></i> Показати деталі
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Результатів поки немає.</strong>
+                <a href="/config/new">Створіть конфігурацію</a> та запустіть перший аналіз.
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Модальне вікно для перегляду результатів -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Результат аналізу</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="resultModalBody">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Завантаження...</span>
+                    </div>
+                    <p class="mt-2">Завантаження результату...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Фільтрація результатів
+function filterResults() {
+    const statusFilter = document.getElementById('statusFilter').value.toLowerCase();
+    const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+    const cards = document.querySelectorAll('.result-card');
+
+    cards.forEach(card => {
+        const status = card.dataset.status.toLowerCase();
+        const name = card.dataset.name.toLowerCase();
+        
+        const statusMatch = !statusFilter || status === statusFilter;
+        const nameMatch = !searchFilter || name.includes(searchFilter);
+        
+        if (statusMatch && nameMatch) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    // Показуємо повідомлення якщо немає результатів
+    const visibleCards = document.querySelectorAll('.result-card[style="display: block;"], .result-card:not([style])');
+    const noResultsMsg = document.getElementById('noResultsMessage');
+    
+    if (visibleCards.length === 0) {
+        if (!noResultsMsg) {
+            const msg = document.createElement('div');
+            msg.id = 'noResultsMessage';
+            msg.className = 'col-12';
+            msg.innerHTML = '<div class="alert alert-warning"><i class="fas fa-search"></i> Немає результатів за вказаними критеріями</div>';
+            document.getElementById('resultsContainer').appendChild(msg);
+        }
+    } else {
+        if (noResultsMsg) {
+            noResultsMsg.remove();
+        }
+    }
+}
+
+// Очищення фільтрів
+function clearFilters() {
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('searchFilter').value = '';
+    filterResults();
+}
+
+// Оновлення статусу пакету
+function refreshBatchStatus(batchId) {
+    fetch(`/batch/${batchId}/status`)
+        .then(response => response.json())
+        .then(data => {
+            // Оновлюємо сторінку для відображення нових даних
+            location.reload();
+        })
+        .catch(error => {
+            console.error('Помилка оновлення статусу:', error);
+        });
+}
+
+// Автоматичне оновлення для виконуваних аналізів
+document.addEventListener('DOMContentLoaded', function() {
+    const runningBatches = document.querySelectorAll('[data-status="running"]');
+    
+    if (runningBatches.length > 0) {
+        // Оновлюємо сторінку кожні 30 секунд якщо є виконувані аналізи
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
+    }
+});
+
+// Показ деталей результату в модальному вікні
+function showResultDetails(taskId) {
+    const modal = new bootstrap.Modal(document.getElementById('resultModal'));
+    const modalBody = document.getElementById('resultModalBody');
+    
+    modalBody.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Завантаження...</span>
+            </div>
+            <p class="mt-2">Завантаження результату...</p>
+        </div>
+    `;
+    
+    modal.show();
+    
+    fetch(`/api/analysis/result/${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            modalBody.innerHTML = `
+                <h6>Сайт: ${data.site_url}</h6>
+                <hr>
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <div class="h4 text-primary">${data.pages_analyzed}</div>
+                            <small class="text-muted">Сторінок проаналізовано</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <div class="h4 text-success">${data.positive_matches.length}</div>
+                            <small class="text-muted">Позитивних збігів</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <div class="h4 text-danger">${data.negative_matches.length}</div>
+                            <small class="text-muted">Негативних збігів</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <div class="h4 text-info">${data.analysis_time.toFixed(1)}с</div>
+                            <small class="text-muted">Час аналізу</small>
+                        </div>
+                    </div>
+                </div>
+                
+                ${data.positive_matches.length > 0 ? `
+                <h6 class="text-success">Позитивні збіги:</h6>
+                <div class="list-group mb-3">
+                    ${data.positive_matches.slice(0, 5).map(match => `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${match.keyword}</h6>
+                                <small>${match.count} разів</small>
+                            </div>
+                            <p class="mb-1"><small><a href="${match.url}" target="_blank" class="text-decoration-none">${match.url}</a></small></p>
+                            <small class="text-muted">${match.context}</small>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                
+                ${data.negative_matches.length > 0 ? `
+                <h6 class="text-danger">Негативні збіги:</h6>
+                <div class="list-group mb-3">
+                    ${data.negative_matches.slice(0, 5).map(match => `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${match.keyword}</h6>
+                                <small>${match.count} разів</small>
+                            </div>
+                            <p class="mb-1"><small><a href="${match.url}" target="_blank" class="text-decoration-none">${match.url}</a></small></p>
+                            <small class="text-muted">${match.context}</small>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                
+                ${data.ai_analysis ? `
+                <h6>ШІ Аналіз:</h6>
+                <div class="alert alert-info">
+                    <pre class="mb-0" style="white-space: pre-wrap;">${data.ai_analysis}</pre>
+                </div>
+                ` : ''}
+            `;
+        })
+        .catch(error => {
+            modalBody.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Помилка завантаження результату: ${error.message}
+                </div>
+            `;
+        });
+}
+</script>
+{% endblock %}
