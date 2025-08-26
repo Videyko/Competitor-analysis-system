@@ -10,7 +10,7 @@ import sys
 sys.path.append('/app')
 
 from fastapi import FastAPI, HTTPException, Request, Form, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr
@@ -20,6 +20,8 @@ import json
 import uuid
 from datetime import datetime
 import asyncio
+from io import BytesIO
+import pandas as pd
 
 # Локальні імпорти
 from shared.logger import setup_logger
@@ -292,7 +294,7 @@ async def start_batch_analysis(
     return RedirectResponse(url=f"/batch/{batch_id}", status_code=303)
 
 async def perform_batch_analysis(batch_id: str, config: SiteAnalysisConfig):
-    """Виконує пакетний аналіз"""
+    """Виконує пакетний аналіз БЕЗ email відправки"""
     try:
         batch_result = batch_analysis_results[batch_id]
         batch_result["status"] = "running"
@@ -351,10 +353,6 @@ async def perform_batch_analysis(batch_id: str, config: SiteAnalysisConfig):
         # Чекаємо завершення всіх аналізів
         await monitor_batch_analysis(batch_id)
         
-        # Відправляємо email якщо потрібно
-        if batch_result["send_email"]:
-            await send_batch_email_report(batch_id, config)
-        
         batch_result["status"] = "completed"
         config.last_analysis = datetime.now()
         
@@ -405,55 +403,6 @@ async def monitor_batch_analysis(batch_id: str):
                     logger.error(f"Помилка перевірки статусу {site_url}: {e}")
                     # Не змінюємо статус при помилці перевірки
 
-async def send_batch_email_report(batch_id: str, config: SiteAnalysisConfig):
-    """Відправляє email звіт про пакетний аналіз"""
-    try:
-        batch_result = batch_analysis_results[batch_id]
-        
-        logger.info(f"Відправляємо email звіти для пакету {batch_id}")
-        
-        # Готуємо список отримувачів
-        recipients = [{"email": email} for email in config.email_recipients]
-        
-        email_tasks = []
-        
-        # Для кожного успішного аналізу відправляємо email
-        for site_url, task_info in batch_result["analysis_tasks"].items():
-            if task_info["status"] == "completed" and task_info["task_id"]:
-                try:
-                    request_data = {
-                        "recipients": recipients,
-                        "subject": f"Звіт аналізу конкурентів: {site_url}",
-                        "analysis_task_id": task_info["task_id"],
-                        "analysis_service_url": ANALYSIS_SERVICE_URL,
-                        "custom_message": batch_result["custom_message"],
-                        "include_attachments": True
-                    }
-                    
-                    response = requests.post(
-                        f"{EMAIL_SERVICE_URL}/send-report", 
-                        json=request_data,
-                        timeout=60
-                    )
-                    
-                    if response.status_code == 200:
-                        email_data = response.json()
-                        email_tasks.append(email_data["task_id"])
-                        logger.info(f"Email звіт для {site_url} запущено: {email_data['task_id']}")
-                    else:
-                        logger.error(f"Помилка відправки email для {site_url}: {response.status_code} - {response.text}")
-                        
-                except Exception as e:
-                    logger.error(f"Помилка відправки email для {site_url}: {e}")
-        
-        if email_tasks:
-            batch_result["email_sent"] = True
-            batch_result["email_tasks"] = email_tasks
-            logger.info(f"Запущено {len(email_tasks)} email задач для пакету {batch_id}")
-        
-    except Exception as e:
-        logger.error(f"Помилка відправки пакетного email звіту: {e}")
-
 @app.get("/batch/{batch_id}", response_class=HTMLResponse)
 async def view_batch_analysis(request: Request, batch_id: str):
     """Переглядає статус пакетного аналізу"""
@@ -473,6 +422,108 @@ async def view_batch_analysis(request: Request, batch_id: str):
     except Exception as e:
         logger.error(f"Помилка рендерингу сторінки пакетного аналізу: {e}")
         return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
+
+@app.get("/batch/{batch_id}/results", response_class=HTMLResponse)
+async def view_batch_results(request: Request, batch_id: str):
+    """Детальний перегляд результатів пакетного аналізу"""
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
+    if batch_id not in batch_analysis_results:
+        raise HTTPException(status_code=404, detail="Пакетний аналіз не знайдений")
+    
+    batch_result = batch_analysis_results[batch_id]
+    
+    # Отримуємо детальні результати для кожного сайту
+    detailed_results = {}
+    for site_url, task_info in batch_result["analysis_tasks"].items():
+        if task_info["status"] == "completed" and task_info["task_id"]:
+            try:
+                response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_info['task_id']}", timeout=30)
+                if response.status_code == 200:
+                    detailed_results[site_url] = response.json()
+            except Exception as e:
+                logger.error(f"Помилка отримання результату для {site_url}: {e}")
+    
+    try:
+        return templates.TemplateResponse("batch_results.html", {
+            "request": request,
+            "batch": batch_result,
+            "detailed_results": detailed_results
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу результатів: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
+
+@app.get("/batch/{batch_id}/download")
+async def download_batch_results(batch_id: str):
+    """Завантаження Excel файлу з результатами"""
+    if batch_id not in batch_analysis_results:
+        raise HTTPException(status_code=404, detail="Пакетний аналіз не знайдений")
+    
+    batch_result = batch_analysis_results[batch_id]
+    
+    # Створюємо Excel файл
+    output = BytesIO()
+    all_positive = []
+    all_negative = []
+    summary_data = []
+    
+    for site_url, task_info in batch_result["analysis_tasks"].items():
+        if task_info["status"] == "completed" and task_info["task_id"]:
+            try:
+                response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_info['task_id']}", timeout=30)
+                if response.status_code == 200:
+                    result_data = response.json()
+                    
+                    # Позитивні збіги
+                    for match in result_data.get('positive_matches', []):
+                        all_positive.append({
+                            'Сайт': site_url,
+                            'Ключове слово': match['keyword'],
+                            'URL': match['url'],
+                            'Кількість': match['count'],
+                            'Контекст': match['context']
+                        })
+                    
+                    # Негативні збіги
+                    for match in result_data.get('negative_matches', []):
+                        all_negative.append({
+                            'Сайт': site_url,
+                            'Заборонене слово': match['keyword'],
+                            'URL': match['url'],
+                            'Кількість': match['count'],
+                            'Контекст': match['context']
+                        })
+                    
+                    # Загальна статистика
+                    summary_data.append({
+                        'Сайт': site_url,
+                        'Сторінок проаналізовано': result_data['pages_analyzed'],
+                        'Позитивних збігів': len(result_data.get('positive_matches', [])),
+                        'Негативних збігів': len(result_data.get('negative_matches', [])),
+                        'Час аналізу (сек)': result_data['analysis_time'],
+                        'Завершено': result_data['completed_at']
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Помилка обробки результату для {site_url}: {e}")
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if summary_data:
+            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Загальна статистика', index=False)
+        if all_positive:
+            pd.DataFrame(all_positive).to_excel(writer, sheet_name='Позитивні збіги', index=False)
+        if all_negative:
+            pd.DataFrame(all_negative).to_excel(writer, sheet_name='Негативні збіги', index=False)
+    
+    output.seek(0)
+    
+    return StreamingResponse(
+        BytesIO(output.read()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=analysis_results_{batch_id[:8]}.xlsx"}
+    )
 
 @app.get("/batch/{batch_id}/status")
 async def get_batch_status(batch_id: str):
