@@ -57,8 +57,13 @@ app = FastAPI(
 )
 
 # Налаштування шаблонів та статичних файлів
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+try:
+    templates = Jinja2Templates(directory="/app/templates")
+    app.mount("/static", StaticFiles(directory="/app/static"), name="static")
+    logger.info("Шаблони та статичні файли налаштовано")
+except Exception as e:
+    logger.error(f"Помилка налаштування шаблонів: {e}")
+    templates = None
 
 # Глобальні змінні
 analysis_configs = {}
@@ -68,46 +73,102 @@ batch_analysis_results = {}
 ANALYSIS_SERVICE_URL = os.getenv("ANALYSIS_SERVICE_URL", "http://analysis-service:8000")
 EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "http://email-service:8001")
 
+logger.info(f"Analysis Service URL: {ANALYSIS_SERVICE_URL}")
+logger.info(f"Email Service URL: {EMAIL_SERVICE_URL}")
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Головна сторінка"""
-    return templates.TemplateResponse("home.html", {
-        "request": request,
-        "configs": list(analysis_configs.values())
-    })
+    if not templates:
+        return HTMLResponse("""
+        <html><body>
+            <h1>Competitor Analysis System</h1>
+            <p>Система запущена, але шаблони не завантажені</p>
+            <ul>
+                <li><a href="/api/docs">API Documentation</a></li>
+                <li><a href="/health">Health Check</a></li>
+            </ul>
+        </body></html>
+        """)
+    
+    try:
+        return templates.TemplateResponse("home.html", {
+            "request": request,
+            "configs": list(analysis_configs.values())
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу головної сторінки: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    # Перевіряємо доступність мікросервісів
+    analysis_status = "unknown"
+    email_status = "unknown"
+    
+    try:
+        response = requests.get(f"{ANALYSIS_SERVICE_URL}/health", timeout=5)
+        analysis_status = "ok" if response.status_code == 200 else "error"
+    except:
+        analysis_status = "unreachable"
+    
+    try:
+        response = requests.get(f"{EMAIL_SERVICE_URL}/health", timeout=5)
+        email_status = "ok" if response.status_code == 200 else "error"
+    except:
+        email_status = "unreachable"
+    
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "services": {
+            "analysis": analysis_status,
+            "email": email_status
+        }
+    }
 
 @app.get("/config/new", response_class=HTMLResponse)
 async def new_config_form(request: Request):
     """Форма створення нової конфігурації"""
-    return templates.TemplateResponse("config_form.html", {
-        "request": request,
-        "config": None,
-        "title": "Нова конфігурація"
-    })
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
+    try:
+        return templates.TemplateResponse("config_form.html", {
+            "request": request,
+            "config": None,
+            "title": "Нова конфігурація"
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу форми конфігурації: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.get("/config/{config_id}", response_class=HTMLResponse)
 async def edit_config_form(request: Request, config_id: str):
     """Форма редагування конфігурації"""
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
     if config_id not in analysis_configs:
         raise HTTPException(status_code=404, detail="Конфігурація не знайдена")
     
-    return templates.TemplateResponse("config_form.html", {
-        "request": request,
-        "config": analysis_configs[config_id],
-        "title": "Редагування конфігурації"
-    })
+    try:
+        return templates.TemplateResponse("config_form.html", {
+            "request": request,
+            "config": analysis_configs[config_id],
+            "title": "Редагування конфігурації"
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу форми редагування: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.post("/config/save")
 async def save_config(
     name: str = Form(...),
     sites: str = Form(...),
     positive_keywords: str = Form(...),
-    negative_keywords: str = Form(...),
+    negative_keywords: str = Form(""),
     max_time_minutes: int = Form(20),
     max_links: int = Form(300),
     openai_api_key: str = Form(""),
@@ -116,63 +177,81 @@ async def save_config(
 ):
     """Зберігає конфігурацію"""
     
-    # Обробляємо дані з форми
-    sites_list = parse_urls_list(sites)
-    positive_list = parse_keywords_list(positive_keywords)
-    negative_list = parse_keywords_list(negative_keywords)
-    recipients_list = parse_emails_list(email_recipients)
-    
-    # Валідація
-    if not sites_list:
-        raise HTTPException(status_code=400, detail="Необхідно вказати хоча б один сайт")
-    if not positive_list:
-        raise HTTPException(status_code=400, detail="Необхідно вказати хоча б одне позитивне ключове слово")
-    if not recipients_list:
-        raise HTTPException(status_code=400, detail="Необхідно вказати хоча б одного отримувача")
-    
-    # Створюємо або оновлюємо конфігурацію
-    if config_id and config_id in analysis_configs:
-        # Оновлення існуючої конфігурації
-        config = analysis_configs[config_id]
-        config.name = name
-        config.sites = sites_list
-        config.positive_keywords = positive_list
-        config.negative_keywords = negative_list
-        config.max_time_minutes = max_time_minutes
-        config.max_links = max_links
-        config.openai_api_key = openai_api_key if openai_api_key else None
-        config.email_recipients = recipients_list
-    else:
-        # Створення нової конфігурації
-        config_id = str(uuid.uuid4())
-        config = SiteAnalysisConfig(
-            id=config_id,
-            name=name,
-            sites=sites_list,
-            positive_keywords=positive_list,
-            negative_keywords=negative_list,
-            max_time_minutes=max_time_minutes,
-            max_links=max_links,
-            openai_api_key=openai_api_key if openai_api_key else None,
-            email_recipients=recipients_list,
-            created_at=datetime.now()
-        )
-        analysis_configs[config_id] = config
-    
-    return RedirectResponse(url="/", status_code=303)
+    try:
+        # Обробляємо дані з форми
+        sites_list = parse_urls_list(sites)
+        positive_list = parse_keywords_list(positive_keywords)
+        negative_list = parse_keywords_list(negative_keywords)
+        recipients_list = parse_emails_list(email_recipients)
+        
+        logger.info(f"Обробка конфігурації: сайтів={len(sites_list)}, позитивних={len(positive_list)}, негативних={len(negative_list)}, отримувачів={len(recipients_list)}")
+        
+        # Валідація
+        if not sites_list:
+            raise HTTPException(status_code=400, detail="Необхідно вказати хоча б один валідний сайт")
+        if not positive_list:
+            raise HTTPException(status_code=400, detail="Необхідно вказати хоча б одне позитивне ключове слово")
+        if not recipients_list:
+            raise HTTPException(status_code=400, detail="Необхідно вказати хоча б одного валідного отримувача")
+        
+        # Створюємо або оновлюємо конфігурацію
+        if config_id and config_id in analysis_configs:
+            # Оновлення існуючої конфігурації
+            config = analysis_configs[config_id]
+            config.name = name
+            config.sites = sites_list
+            config.positive_keywords = positive_list
+            config.negative_keywords = negative_list
+            config.max_time_minutes = max_time_minutes
+            config.max_links = max_links
+            config.openai_api_key = openai_api_key if openai_api_key else None
+            config.email_recipients = recipients_list
+            logger.info(f"Оновлено конфігурацію: {config_id}")
+        else:
+            # Створення нової конфігурації
+            config_id = str(uuid.uuid4())
+            config = SiteAnalysisConfig(
+                id=config_id,
+                name=name,
+                sites=sites_list,
+                positive_keywords=positive_list,
+                negative_keywords=negative_list,
+                max_time_minutes=max_time_minutes,
+                max_links=max_links,
+                openai_api_key=openai_api_key if openai_api_key else None,
+                email_recipients=recipients_list,
+                created_at=datetime.now()
+            )
+            analysis_configs[config_id] = config
+            logger.info(f"Створено нову конфігурацію: {config_id}")
+        
+        return RedirectResponse(url="/", status_code=303)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Помилка збереження конфігурації: {e}")
+        raise HTTPException(status_code=500, detail=f"Помилка збереження: {str(e)}")
 
 @app.get("/config/{config_id}/analyze", response_class=HTMLResponse)
 async def analyze_config_form(request: Request, config_id: str):
     """Форма запуску аналізу"""
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
     if config_id not in analysis_configs:
         raise HTTPException(status_code=404, detail="Конфігурація не знайдена")
     
     config = analysis_configs[config_id]
     
-    return templates.TemplateResponse("analyze_form.html", {
-        "request": request,
-        "config": config
-    })
+    try:
+        return templates.TemplateResponse("analyze_form.html", {
+            "request": request,
+            "config": config
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу форми аналізу: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.post("/config/{config_id}/analyze")
 async def start_batch_analysis(
@@ -188,6 +267,8 @@ async def start_batch_analysis(
     
     config = analysis_configs[config_id]
     batch_id = str(uuid.uuid4())
+    
+    logger.info(f"Запуск пакетного аналізу: {batch_id} для конфігурації {config.name}")
     
     # Зберігаємо інформацію про пакетний аналіз
     batch_analysis_results[batch_id] = {
@@ -216,20 +297,28 @@ async def perform_batch_analysis(batch_id: str, config: SiteAnalysisConfig):
         batch_result = batch_analysis_results[batch_id]
         batch_result["status"] = "running"
         
+        logger.info(f"Починаємо пакетний аналіз {batch_id} для {len(config.sites)} сайтів")
+        
         # Аналізуємо кожен сайт
-        for site_url in config.sites:
+        for i, site_url in enumerate(config.sites):
             try:
-                logger.info(f"Запускаємо аналіз для {site_url}")
+                logger.info(f"Запускаємо аналіз для {site_url} ({i+1}/{len(config.sites)})")
                 
                 # Запускаємо аналіз через API
-                response = requests.post(f"{ANALYSIS_SERVICE_URL}/analyze", json={
+                request_data = {
                     "site_url": site_url,
                     "positive_keywords": config.positive_keywords,
                     "negative_keywords": config.negative_keywords,
                     "max_time_minutes": config.max_time_minutes,
                     "max_links": config.max_links,
                     "openai_api_key": config.openai_api_key
-                })
+                }
+                
+                response = requests.post(
+                    f"{ANALYSIS_SERVICE_URL}/analyze", 
+                    json=request_data,
+                    timeout=60
+                )
                 
                 if response.status_code == 200:
                     task_data = response.json()
@@ -240,13 +329,13 @@ async def perform_batch_analysis(batch_id: str, config: SiteAnalysisConfig):
                     }
                     logger.info(f"Аналіз {site_url} запущено: {task_data['task_id']}")
                 else:
-                    logger.error(f"Помилка запуску аналізу для {site_url}: {response.text}")
+                    logger.error(f"Помилка запуску аналізу для {site_url}: {response.status_code} - {response.text}")
                     batch_result["failed_sites"] += 1
                     batch_result["analysis_tasks"][site_url] = {
                         "task_id": None,
                         "status": "failed",
                         "site_url": site_url,
-                        "error": response.text
+                        "error": f"HTTP {response.status_code}: {response.text}"
                     }
                 
             except Exception as e:
@@ -269,6 +358,8 @@ async def perform_batch_analysis(batch_id: str, config: SiteAnalysisConfig):
         batch_result["status"] = "completed"
         config.last_analysis = datetime.now()
         
+        logger.info(f"Пакетний аналіз {batch_id} завершено")
+        
     except Exception as e:
         logger.error(f"Помилка пакетного аналізу {batch_id}: {e}")
         batch_analysis_results[batch_id]["status"] = "failed"
@@ -277,15 +368,28 @@ async def perform_batch_analysis(batch_id: str, config: SiteAnalysisConfig):
 async def monitor_batch_analysis(batch_id: str):
     """Моніторить виконання пакетного аналізу"""
     batch_result = batch_analysis_results[batch_id]
+    max_wait_time = 3600  # Максимум 1 година очікування
+    start_time = datetime.now()
+    
+    logger.info(f"Починаємо моніторинг аналізу {batch_id}")
     
     while batch_result["completed_sites"] + batch_result["failed_sites"] < batch_result["total_sites"]:
-        await asyncio.sleep(10)  # Перевіряємо кожні 10 секунд
+        # Перевіряємо час очікування
+        elapsed_time = (datetime.now() - start_time).total_seconds()
+        if elapsed_time > max_wait_time:
+            logger.warning(f"Перевищено максимальний час очікування для {batch_id}")
+            break
+            
+        await asyncio.sleep(15)  # Перевіряємо кожні 15 секунд
         
         for site_url, task_info in batch_result["analysis_tasks"].items():
             if task_info["status"] == "pending" and task_info["task_id"]:
                 try:
                     # Перевіряємо статус аналізу
-                    response = requests.get(f"{ANALYSIS_SERVICE_URL}/status/{task_info['task_id']}")
+                    response = requests.get(
+                        f"{ANALYSIS_SERVICE_URL}/status/{task_info['task_id']}",
+                        timeout=30
+                    )
                     if response.status_code == 200:
                         status_data = response.json()
                         if status_data["status"] == "completed":
@@ -294,41 +398,58 @@ async def monitor_batch_analysis(batch_id: str):
                             logger.info(f"Аналіз {site_url} завершено")
                         elif status_data["status"] == "failed":
                             task_info["status"] = "failed"
+                            task_info["error"] = status_data.get("message", "Невідома помилка")
                             batch_result["failed_sites"] += 1
                             logger.error(f"Аналіз {site_url} провалився")
                 except Exception as e:
                     logger.error(f"Помилка перевірки статусу {site_url}: {e}")
+                    # Не змінюємо статус при помилці перевірки
 
 async def send_batch_email_report(batch_id: str, config: SiteAnalysisConfig):
     """Відправляє email звіт про пакетний аналіз"""
     try:
         batch_result = batch_analysis_results[batch_id]
         
+        logger.info(f"Відправляємо email звіти для пакету {batch_id}")
+        
         # Готуємо список отримувачів
         recipients = [{"email": email} for email in config.email_recipients]
+        
+        email_tasks = []
         
         # Для кожного успішного аналізу відправляємо email
         for site_url, task_info in batch_result["analysis_tasks"].items():
             if task_info["status"] == "completed" and task_info["task_id"]:
                 try:
-                    response = requests.post(f"{EMAIL_SERVICE_URL}/send-report", json={
+                    request_data = {
                         "recipients": recipients,
-                        "subject": f"Звіт аналізу: {site_url}",
+                        "subject": f"Звіт аналізу конкурентів: {site_url}",
                         "analysis_task_id": task_info["task_id"],
                         "analysis_service_url": ANALYSIS_SERVICE_URL,
                         "custom_message": batch_result["custom_message"],
                         "include_attachments": True
-                    })
+                    }
+                    
+                    response = requests.post(
+                        f"{EMAIL_SERVICE_URL}/send-report", 
+                        json=request_data,
+                        timeout=60
+                    )
                     
                     if response.status_code == 200:
-                        logger.info(f"Email звіт для {site_url} відправлено")
+                        email_data = response.json()
+                        email_tasks.append(email_data["task_id"])
+                        logger.info(f"Email звіт для {site_url} запущено: {email_data['task_id']}")
                     else:
-                        logger.error(f"Помилка відправки email для {site_url}: {response.text}")
+                        logger.error(f"Помилка відправки email для {site_url}: {response.status_code} - {response.text}")
                         
                 except Exception as e:
                     logger.error(f"Помилка відправки email для {site_url}: {e}")
         
-        batch_result["email_sent"] = True
+        if email_tasks:
+            batch_result["email_sent"] = True
+            batch_result["email_tasks"] = email_tasks
+            logger.info(f"Запущено {len(email_tasks)} email задач для пакету {batch_id}")
         
     except Exception as e:
         logger.error(f"Помилка відправки пакетного email звіту: {e}")
@@ -336,15 +457,22 @@ async def send_batch_email_report(batch_id: str, config: SiteAnalysisConfig):
 @app.get("/batch/{batch_id}", response_class=HTMLResponse)
 async def view_batch_analysis(request: Request, batch_id: str):
     """Переглядає статус пакетного аналізу"""
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
     if batch_id not in batch_analysis_results:
         raise HTTPException(status_code=404, detail="Пакетний аналіз не знайдений")
     
     batch_result = batch_analysis_results[batch_id]
     
-    return templates.TemplateResponse("batch_analysis.html", {
-        "request": request,
-        "batch": batch_result
-    })
+    try:
+        return templates.TemplateResponse("batch_analysis.html", {
+            "request": request,
+            "batch": batch_result
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу сторінки пакетного аналізу: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.get("/batch/{batch_id}/status")
 async def get_batch_status(batch_id: str):
@@ -357,10 +485,17 @@ async def get_batch_status(batch_id: str):
 @app.get("/results", response_class=HTMLResponse)
 async def view_results(request: Request):
     """Переглядає всі результати аналізів"""
-    return templates.TemplateResponse("results.html", {
-        "request": request,
-        "batches": list(batch_analysis_results.values())
-    })
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
+    try:
+        return templates.TemplateResponse("results.html", {
+            "request": request,
+            "batches": list(batch_analysis_results.values())
+        })
+    except Exception as e:
+        logger.error(f"Помилка рендерингу сторінки результатів: {e}")
+        return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.delete("/config/{config_id}")
 async def delete_config(config_id: str):
@@ -369,6 +504,7 @@ async def delete_config(config_id: str):
         raise HTTPException(status_code=404, detail="Конфігурація не знайдена")
     
     del analysis_configs[config_id]
+    logger.info(f"Видалено конфігурацію: {config_id}")
     return {"message": "Конфігурація видалена"}
 
 @app.delete("/batch/{batch_id}")
@@ -378,13 +514,44 @@ async def delete_batch_analysis(batch_id: str):
         raise HTTPException(status_code=404, detail="Пакетний аналіз не знайдений")
     
     del batch_analysis_results[batch_id]
+    logger.info(f"Видалено пакетний аналіз: {batch_id}")
     return {"message": "Результати пакетного аналізу видалені"}
 
-# Створюємо директорії для шаблонів та статичних файлів
-import os
-os.makedirs("templates", exist_ok=True)
-os.makedirs("static", exist_ok=True)
+# API endpoints для отримання статистики
+@app.get("/api/configs")
+async def get_configs():
+    """Отримати всі конфігурації"""
+    return list(analysis_configs.values())
+
+@app.get("/api/batches")
+async def get_batches():
+    """Отримати всі пакетні аналізи"""
+    return list(batch_analysis_results.values())
+
+@app.get("/api/analysis/result/{task_id}")
+async def get_analysis_result(task_id: str):
+    """Проксі для отримання результату аналізу"""
+    try:
+        response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_id}", timeout=30)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Помилка отримання результату аналізу {task_id}: {e}")
+        raise HTTPException(status_code=503, detail="Сервіс аналізу недоступний")
+
+# Створюємо директорії для шаблонів та статичних файлів якщо вони не існують
+try:
+    os.makedirs("/app/templates", exist_ok=True)
+    os.makedirs("/app/static", exist_ok=True)
+    os.makedirs("/app/static/css", exist_ok=True)
+    os.makedirs("/app/static/js", exist_ok=True)
+    logger.info("Директорії створено")
+except Exception as e:
+    logger.warning(f"Не вдалося створити директорії: {e}")
 
 if __name__ == "__main__":
     import uvicorn
+    logger.info("Запуск веб-сервера...")
     uvicorn.run(app, host="0.0.0.0", port=8002)
