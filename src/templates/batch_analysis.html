@@ -113,15 +113,6 @@
             <div class="card-body">
                 <p><strong>Створено:</strong> {{ batch.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
                 <p><strong>ID пакету:</strong> <small class="font-monospace">{{ batch.id }}</small></p>
-                <p><strong>Email звіт:</strong> 
-                    {% if batch.email_sent %}
-                        <span class="badge bg-success">Відправлено</span>
-                    {% elif batch.send_email %}
-                        <span class="badge bg-warning">Очікується</span>
-                    {% else %}
-                        <span class="badge bg-secondary">Вимкнено</span>
-                    {% endif %}
-                </p>
                 
                 {% if batch.custom_message %}
                 <hr>
@@ -136,10 +127,20 @@
                 <h5><i class="fas fa-cogs"></i> Дії</h5>
             </div>
             <div class="card-body">
-                <button class="btn btn-primary btn-sm w-100 mb-2 refresh-btn" 
+                {% if batch.status == 'completed' %}
+                <a href="/batch/{{ batch.id }}/results" class="btn btn-success btn-sm w-100 mb-2">
+                    <i class="fas fa-chart-bar"></i> Переглянути результати
+                </a>
+                <a href="/batch/{{ batch.id }}/download" class="btn btn-primary btn-sm w-100 mb-2">
+                    <i class="fas fa-download"></i> Завантажити Excel
+                </a>
+                {% endif %}
+                
+                <button class="btn btn-outline-primary btn-sm w-100 mb-2 refresh-btn" 
                         onclick="refreshStatus()">
                     <i class="fas fa-sync"></i> Оновити статус
                 </button>
+                
                 <a href="/results" class="btn btn-outline-secondary btn-sm w-100 mb-2">
                     <i class="fas fa-chart-bar"></i> Всі результати
                 </a>
@@ -164,6 +165,22 @@
                          style="width: {{ ((batch.completed_sites + batch.failed_sites) / batch.total_sites * 100)|round|int }}%">
                     </div>
                 </div>
+            </div>
+        </div>
+        {% elif batch.status == 'completed' %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-check-circle text-success"></i> Завершено</h5>
+            </div>
+            <div class="card-body">
+                <p>Аналіз успішно завершено!</p>
+                <ul>
+                    <li>Завершено: {{ batch.completed_sites }} сайтів</li>
+                    <li>Помилок: {{ batch.failed_sites }} сайтів</li>
+                </ul>
+                <p><small class="text-muted">
+                    Результати доступні для перегляду та завантаження.
+                </small></p>
             </div>
         </div>
         {% endif %}
