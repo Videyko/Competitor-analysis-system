@@ -7,6 +7,7 @@ Redis клієнт для кешування та черг
 import os
 import json
 import redis
+import time
 from typing import Any, Optional, Dict, List
 from datetime import timedelta
 
@@ -20,21 +21,35 @@ class RedisClient:
         )
         
         # Парсинг URL та зміна DB
-        if redis_url and f"/{db}" not in redis_url:
-            self.redis_url = f"{redis_url.rstrip('/')}/{db}"
+        if f"/{db}" not in self.redis_url:
+            self.redis_url = f"{self.redis_url.rstrip('/')}/{db}"
         
-        self.client = redis.from_url(self.redis_url, decode_responses=True)
-        self._test_connection()
+        try:
+            self.client = redis.from_url(self.redis_url, decode_responses=True)
+            self._test_connection()
+        except Exception as e:
+            print(f"Попередження: Не вдалося підключитися до Redis: {e}")
+            self.client = None
     
     def _test_connection(self):
         """Тестування з'єднання з Redis"""
-        try:
-            self.client.ping()
-        except redis.ConnectionError as e:
-            raise ConnectionError(f"Не вдалося підключитися до Redis: {e}")
+        if self.client:
+            try:
+                self.client.ping()
+                print(f"✅ Підключення до Redis успішне (DB: {self.redis_url.split('/')[-1]})")
+            except redis.ConnectionError as e:
+                print(f"❌ Не вдалося підключитися до Redis: {e}")
+                self.client = None
+    
+    def _is_connected(self) -> bool:
+        """Перевірка чи підключений Redis"""
+        return self.client is not None
     
     def set(self, key: str, value: Any, ttl: int = None) -> bool:
         """Встановлення значення"""
+        if not self._is_connected():
+            return False
+            
         try:
             if isinstance(value, (dict, list)):
                 value = json.dumps(value, ensure_ascii=False)
@@ -49,6 +64,9 @@ class RedisClient:
     
     def get(self, key: str) -> Optional[Any]:
         """Отримання значення"""
+        if not self._is_connected():
+            return None
+            
         try:
             value = self.client.get(key)
             if value is None:
@@ -65,6 +83,9 @@ class RedisClient:
     
     def delete(self, key: str) -> bool:
         """Видалення ключа"""
+        if not self._is_connected():
+            return False
+            
         try:
             return bool(self.client.delete(key))
         except Exception as e:
@@ -73,6 +94,9 @@ class RedisClient:
     
     def exists(self, key: str) -> bool:
         """Перевірка існування ключа"""
+        if not self._is_connected():
+            return False
+            
         try:
             return bool(self.client.exists(key))
         except Exception as e:
@@ -81,6 +105,9 @@ class RedisClient:
     
     def increment(self, key: str, amount: int = 1) -> int:
         """Збільшення числового значення"""
+        if not self._is_connected():
+            return 0
+            
         try:
             return self.client.incrby(key, amount)
         except Exception as e:
@@ -89,6 +116,9 @@ class RedisClient:
     
     def expire(self, key: str, ttl: int) -> bool:
         """Встановлення TTL для ключа"""
+        if not self._is_connected():
+            return False
+            
         try:
             return self.client.expire(key, ttl)
         except Exception as e:
@@ -97,6 +127,9 @@ class RedisClient:
     
     def keys(self, pattern: str = "*") -> List[str]:
         """Отримання списку ключів за шаблоном"""
+        if not self._is_connected():
+            return []
+            
         try:
             return self.client.keys(pattern)
         except Exception as e:
@@ -105,6 +138,9 @@ class RedisClient:
     
     def flush_db(self):
         """Очищення поточної бази даних"""
+        if not self._is_connected():
+            return False
+            
         try:
             return self.client.flushdb()
         except Exception as e:
@@ -114,6 +150,9 @@ class RedisClient:
     # Методи для роботи з хешами
     def hset(self, name: str, key: str, value: Any) -> bool:
         """Встановлення значення в хеш"""
+        if not self._is_connected():
+            return False
+            
         try:
             if isinstance(value, (dict, list)):
                 value = json.dumps(value, ensure_ascii=False)
@@ -124,6 +163,9 @@ class RedisClient:
     
     def hget(self, name: str, key: str) -> Optional[Any]:
         """Отримання значення з хешу"""
+        if not self._is_connected():
+            return None
+            
         try:
             value = self.client.hget(name, key)
             if value is None:
@@ -139,6 +181,9 @@ class RedisClient:
     
     def hgetall(self, name: str) -> Dict[str, Any]:
         """Отримання всіх значень з хешу"""
+        if not self._is_connected():
+            return {}
+            
         try:
             data = self.client.hgetall(name)
             result = {}
@@ -154,6 +199,9 @@ class RedisClient:
     
     def hdel(self, name: str, key: str) -> bool:
         """Видалення ключа з хешу"""
+        if not self._is_connected():
+            return False
+            
         try:
             return bool(self.client.hdel(name, key))
         except Exception as e:
@@ -163,6 +211,9 @@ class RedisClient:
     # Методи для роботи зі списками (черги)
     def lpush(self, name: str, value: Any) -> int:
         """Додавання елемента в початок списку"""
+        if not self._is_connected():
+            return 0
+            
         try:
             if isinstance(value, (dict, list)):
                 value = json.dumps(value, ensure_ascii=False)
@@ -173,6 +224,9 @@ class RedisClient:
     
     def rpush(self, name: str, value: Any) -> int:
         """Додавання елемента в кінець списку"""
+        if not self._is_connected():
+            return 0
+            
         try:
             if isinstance(value, (dict, list)):
                 value = json.dumps(value, ensure_ascii=False)
@@ -183,6 +237,9 @@ class RedisClient:
     
     def lpop(self, name: str) -> Optional[Any]:
         """Отримання та видалення елемента з початку списку"""
+        if not self._is_connected():
+            return None
+            
         try:
             value = self.client.lpop(name)
             if value is None:
@@ -198,6 +255,9 @@ class RedisClient:
     
     def rpop(self, name: str) -> Optional[Any]:
         """Отримання та видалення елемента з кінця списку"""
+        if not self._is_connected():
+            return None
+            
         try:
             value = self.client.rpop(name)
             if value is None:
@@ -213,6 +273,9 @@ class RedisClient:
     
     def llen(self, name: str) -> int:
         """Отримання довжини списку"""
+        if not self._is_connected():
+            return 0
+            
         try:
             return self.client.llen(name)
         except Exception as e:
@@ -245,6 +308,9 @@ class RedisClient:
     # Статистика
     def get_stats(self) -> Dict[str, Any]:
         """Отримання статистики Redis"""
+        if not self._is_connected():
+            return {}
+            
         try:
             info = self.client.info()
             return {
@@ -294,10 +360,17 @@ class CacheManager:
         """Отримання кешованого email шаблону"""
         return self.redis.cache_get(f"email_template:{template_id}")
 
-# Глобальні екземпляри для різних сервісів
-analysis_redis = RedisClient(db=0)  # База 0 для аналізу
-email_redis = RedisClient(db=1)     # База 1 для email
-web_redis = RedisClient(db=2)       # База 2 для веб-інтерфейсу
+# Створення екземплярів з обробкою помилок
+try:
+    analysis_redis = RedisClient(db=0)  # База 0 для аналізу
+    email_redis = RedisClient(db=1)     # База 1 для email
+    web_redis = RedisClient(db=2)       # База 2 для веб-інтерфейсу
+except Exception as e:
+    print(f"Помилка ініціалізації Redis: {e}")
+    # Створюємо заглушки якщо Redis недоступний
+    analysis_redis = RedisClient()
+    email_redis = RedisClient()
+    web_redis = RedisClient()
 
 # Менеджери кешування
 analysis_cache = CacheManager(analysis_redis)
