@@ -6,6 +6,7 @@
 
 import os
 import sys
+import time
 sys.path.append('/app')
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -76,9 +77,31 @@ class EmailService:
     async def get_analysis_result(self, task_id: str, service_url: str) -> Dict:
         """Отримує результат аналізу з основного сервісу"""
         try:
-            response = requests.get(f"{service_url}/result/{task_id}")
-            response.raise_for_status()
-            return response.json()
+            # Додаємо retry логіку
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = requests.get(f"{service_url}/result/{task_id}", timeout=30)
+                    if response.status_code == 200:
+                        return response.json()
+                    elif response.status_code == 404:
+                        raise HTTPException(status_code=404, detail="Результат аналізу не знайдено")
+                    elif response.status_code == 202:
+                        # Аналіз ще виконується
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(10)
+                            continue
+                        else:
+                            raise HTTPException(status_code=202, detail="Аналіз ще не завершено")
+                    else:
+                        response.raise_for_status()
+                except requests.exceptions.RequestException as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Спроба {attempt + 1} не вдалася: {e}")
+                        await asyncio.sleep(5)
+                        continue
+                    raise
+                    
         except Exception as e:
             logger.error(f"Помилка отримання результату аналізу: {e}")
             raise HTTPException(status_code=400, detail=f"Не вдалося отримати результат аналізу: {e}")
@@ -497,6 +520,7 @@ class EmailService:
             if attachments:
                 for filename, content in attachments:
                     attachment = MIMEBase('application', 'octet-stream')
+                    content.seek(0)  # Важливо: переміщуємо курсор на початок
                     attachment.set_payload(content.read())
                     encoders.encode_base64(attachment)
                     attachment.add_header(
@@ -607,9 +631,12 @@ async def perform_email_sending(task_id: str, request: EmailRequest):
         # Створюємо вкладення
         attachments = []
         if request.include_attachments:
-            excel_file = email_service.create_excel_attachment(analysis_result)
-            filename = f"analysis_report_{analysis_result['site_url'].replace('https://', '').replace('/', '_')}.xlsx"
-            attachments.append((filename, excel_file))
+            try:
+                excel_file = email_service.create_excel_attachment(analysis_result)
+                filename = f"analysis_report_{analysis_result['site_url'].replace('https://', '').replace('http://', '').replace('/', '_')}.xlsx"
+                attachments.append((filename, excel_file))
+            except Exception as e:
+                logger.error(f"Помилка створення Excel вкладення: {e}")
         
         # Відправляємо email кожному отримувачу
         for recipient in request.recipients:
@@ -643,4 +670,32 @@ async def get_email_status(task_id: str):
     """
     Отримує статус відправки email
     """
-    if task_id not in email
+    if task_id not in email_tasks:
+        raise HTTPException(status_code=404, detail="Email задача не знайдена")
+    
+    return email_tasks[task_id]
+
+@app.get("/tasks")
+async def get_all_email_tasks():
+    """
+    Отримує список всіх email задач
+    """
+    return {
+        "tasks": list(email_tasks.keys()),
+        "total": len(email_tasks)
+    }
+
+@app.delete("/task/{task_id}")
+async def delete_email_task(task_id: str):
+    """
+    Видаляє email задачу
+    """
+    if task_id not in email_tasks:
+        raise HTTPException(status_code=404, detail="Email задача не знайдена")
+    
+    del email_tasks[task_id]
+    return {"message": "Email задача видалена"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
