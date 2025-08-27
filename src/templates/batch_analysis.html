@@ -71,28 +71,54 @@
                                     </a>
                                 </td>
                                 <td>
-                                    <span class="badge bg-{% if task_info.status == 'completed' %}success{% elif task_info.status == 'failed' %}danger{% else %}warning{% endif %}">
+                                    <span class="badge bg-{% if task_info.status == 'completed' %}success{% elif task_info.status == 'failed' %}danger{% elif task_info.status == 'running' %}primary{% else %}warning{% endif %}">
                                         {{ task_info.status|upper }}
                                     </span>
                                 </td>
                                 <td>
-                                    <small class="text-muted font-monospace">
-                                        {{ task_info.task_id if task_info.task_id else 'N/A' }}
+                                    {% if task_info.task_id %}
+                                    <small class="text-muted font-monospace">{{ task_info.task_id[:8] }}...
+                                        <button class="btn btn-xs btn-outline-secondary ms-1" onclick="copyToClipboard('{{ task_info.task_id }}')" title="Копіювати повний Task ID">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
                                     </small>
+                                    {% else %}
+                                    <small class="text-muted">N/A</small>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     {% if task_info.status == 'completed' and task_info.task_id %}
-                                    <button class="btn btn-sm btn-outline-primary view-result-btn" 
-                                            data-task-id="{{ task_info.task_id }}">
-                                        <i class="fas fa-eye"></i> Переглянути
-                                    </button>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" onclick="showResultModal('{{ task_info.task_id }}')" title="Швидкий перегляд">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <a href="/result/{{ task_info.task_id }}" class="btn btn-primary" target="_blank" title="Детальний перегляд">
+                                            <i class="fas fa-external-link-alt"></i>
+                                        </a>
+                                        <button class="btn btn-outline-secondary" onclick="downloadResult('{{ task_info.task_id }}')" title="Завантажити Excel">
+                                            <i class="fas fa-download"></i>
+                                        </button>
+                                    </div>
+                                    {% elif task_info.status == 'running' or task_info.status == 'pending' %}
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="/result/{{ task_info.task_id }}" class="btn btn-outline-warning" target="_blank" title="Сторінка очікування">
+                                            <i class="fas fa-clock"></i> Очікування
+                                        </a>
+                                        <button class="btn btn-outline-secondary" onclick="refreshTaskStatus('{{ task_info.task_id }}')" title="Оновити статус">
+                                            <i class="fas fa-sync"></i>
+                                        </button>
+                                    </div>
                                     {% elif task_info.status == 'failed' %}
-                                    <span class="text-danger" title="{{ task_info.get('error', 'Невідома помилка') }}">
-                                        <i class="fas fa-exclamation-triangle"></i> Помилка
-                                    </span>
+                                    <div>
+                                        <span class="text-danger" title="{{ task_info.get('error', 'Невідома помилка') }}">
+                                            <i class="fas fa-exclamation-triangle"></i> Помилка
+                                        </span>
+                                        <br>
+                                        <small class="text-muted">{{ task_info.get('error', 'Невідома помилка')[:50] }}{% if task_info.get('error', '')|length > 50 %}...{% endif %}</small>
+                                    </div>
                                     {% else %}
                                     <span class="text-muted">
-                                        <i class="fas fa-clock"></i> Очікування
+                                        <i class="fas fa-question"></i> Невідомий статус
                                     </span>
                                     {% endif %}
                                 </td>
@@ -112,7 +138,13 @@
             </div>
             <div class="card-body">
                 <p><strong>Створено:</strong> {{ batch.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
-                <p><strong>ID пакету:</strong> <small class="font-monospace">{{ batch.id }}</small></p>
+                <p><strong>ID пакету:</strong> 
+                    <br><small class="font-monospace">{{ batch.id }}
+                        <button class="btn btn-xs btn-outline-secondary ms-1" onclick="copyToClipboard('{{ batch.id }}')" title="Копіювати ID">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </small>
+                </p>
                 
                 {% if batch.custom_message %}
                 <hr>
@@ -128,42 +160,61 @@
             </div>
             <div class="card-body">
                 {% if batch.status == 'completed' %}
-                <a href="/batch/{{ batch.id }}/results" class="btn btn-success btn-sm w-100 mb-2">
-                    <i class="fas fa-chart-bar"></i> Переглянути результати
+                <a href="/batch/{{ batch.id }}/results" class="btn btn-success w-100 mb-2">
+                    <i class="fas fa-chart-bar"></i> Детальні результати
                 </a>
-                <a href="/batch/{{ batch.id }}/download" class="btn btn-primary btn-sm w-100 mb-2">
+                <a href="/batch/{{ batch.id }}/download" class="btn btn-primary w-100 mb-2">
                     <i class="fas fa-download"></i> Завантажити Excel
                 </a>
+                <hr>
                 {% endif %}
                 
-                <button class="btn btn-outline-primary btn-sm w-100 mb-2 refresh-btn" 
-                        onclick="refreshStatus()">
+                <button class="btn btn-outline-primary w-100 mb-2" onclick="refreshStatus()">
                     <i class="fas fa-sync"></i> Оновити статус
                 </button>
                 
-                <a href="/results" class="btn btn-outline-secondary btn-sm w-100 mb-2">
+                <a href="/results" class="btn btn-outline-secondary w-100 mb-2">
                     <i class="fas fa-chart-bar"></i> Всі результати
                 </a>
-                <a href="/" class="btn btn-outline-secondary btn-sm w-100">
+                <a href="/" class="btn btn-outline-secondary w-100">
                     <i class="fas fa-home"></i> Головна
                 </a>
+                
+                {% if batch.status == 'completed' or batch.status == 'failed' %}
+                <hr>
+                <button class="btn btn-outline-danger w-100" onclick="deleteBatch('{{ batch.id }}')">
+                    <i class="fas fa-trash"></i> Видалити результати
+                </button>
+                {% endif %}
             </div>
         </div>
 
-        {% if batch.status == 'running' %}
+        {% if batch.status == 'running' or batch.status == 'pending' %}
         <div class="card mt-3">
             <div class="card-header">
                 <h5><i class="fas fa-spinner fa-spin"></i> Виконується</h5>
             </div>
             <div class="card-body">
                 <p>Аналіз виконується в фоновому режимі.</p>
-                <p><small class="text-muted">
-                    Сторінка автоматично оновлюється кожні 10 секунд.
-                </small></p>
                 <div class="progress mb-2">
                     <div class="progress-bar progress-bar-striped progress-bar-animated pulse" 
                          style="width: {{ ((batch.completed_sites + batch.failed_sites) / batch.total_sites * 100)|round|int }}%">
                     </div>
+                </div>
+                <p><small class="text-muted">
+                    Сторінка автоматично оновлюється кожні 10 секунд.
+                </small></p>
+                
+                <div class="mt-3">
+                    <h6>Поточний статус:</h6>
+                    <ul class="list-unstyled">
+                        {% set running_tasks = batch.analysis_tasks.values() | selectattr('status', 'equalto', 'running') | list %}
+                        {% set pending_tasks = batch.analysis_tasks.values() | selectattr('status', 'equalto', 'pending') | list %}
+                        <li><i class="fas fa-cogs text-primary"></i> Виконується: {{ running_tasks|length }}</li>
+                        <li><i class="fas fa-clock text-warning"></i> В черзі: {{ pending_tasks|length }}</li>
+                        <li><i class="fas fa-check text-success"></i> Завершено: {{ batch.completed_sites }}</li>
+                        <li><i class="fas fa-times text-danger"></i> Помилок: {{ batch.failed_sites }}</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -174,25 +225,147 @@
             </div>
             <div class="card-body">
                 <p>Аналіз успішно завершено!</p>
-                <ul>
-                    <li>Завершено: {{ batch.completed_sites }} сайтів</li>
-                    <li>Помилок: {{ batch.failed_sites }} сайтів</li>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> Завершено: {{ batch.completed_sites }} сайтів</li>
+                    <li><i class="fas fa-times text-danger"></i> Помилок: {{ batch.failed_sites }} сайтів</li>
                 </ul>
                 <p><small class="text-muted">
                     Результати доступні для перегляду та завантаження.
                 </small></p>
+                
+                {% if batch.send_email %}
+                <hr>
+                <div class="alert alert-info">
+                    <i class="fas fa-envelope"></i>
+                    <strong>Email звіт:</strong> {% if batch.email_sent %}<span class="badge bg-success">Відправлено</span>{% else %}<span class="badge bg-warning">Відправляється</span>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% elif batch.status == 'failed' %}
+        <div class="card mt-3">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-triangle"></i> Помилка</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-danger">
+                    <strong>Аналіз провалився!</strong>
+                    <br>{{ batch.get('error', 'Невідома помилка') }}
+                </div>
+                <p>Можливі причини:</p>
+                <ul>
+                    <li>Проблеми з мережею</li>
+                    <li>Недоступність сайтів</li>
+                    <li>Перевищення ліміту часу</li>
+                    <li>Помилки конфігурації</li>
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Інформація</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Створено:</strong> {{ batch.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                <p><strong>ID пакету:</strong> 
+                    <br><small class="font-monospace">{{ batch.id }}
+                        <button class="btn btn-xs btn-outline-secondary ms-1" onclick="copyToClipboard('{{ batch.id }}')" title="Копіювати ID">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </small>
+                </p>
+                
+                {% if batch.custom_message %}
+                <hr>
+                <h6>Додаткове повідомлення:</h6>
+                <div class="alert alert-light">
+                    <small>{{ batch.custom_message }}</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-cogs"></i> Дії</h5>
+            </div>
+            <div class="card-body">
+                {% if batch.status == 'completed' %}
+                <a href="/batch/{{ batch.id }}/results" class="btn btn-success w-100 mb-2">
+                    <i class="fas fa-chart-bar"></i> Детальні результати
+                </a>
+                <a href="/batch/{{ batch.id }}/download" class="btn btn-primary w-100 mb-2">
+                    <i class="fas fa-download"></i> Завантажити Excel
+                </a>
+                <hr>
+                {% endif %}
+                
+                <button class="btn btn-outline-primary w-100 mb-2" onclick="refreshStatus()">
+                    <i class="fas fa-sync"></i> Оновити статус
+                </button>
+                
+                <a href="/results" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="fas fa-chart-bar"></i> Всі результати
+                </a>
+                <a href="/" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="fas fa-home"></i> Головна
+                </a>
+                
+                {% if batch.status == 'completed' or batch.status == 'failed' %}
+                <hr>
+                <button class="btn btn-outline-danger w-100" onclick="deleteBatch('{{ batch.id }}')">
+                    <i class="fas fa-trash"></i> Видалити результати
+                </button>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Статистика по ключових словах -->
+        {% if batch.status == 'completed' %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-pie"></i> Швидка статистика</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    {% set total_positive = 0 %}
+                    {% set total_negative = 0 %}
+                    {% for site_url, task_info in batch.analysis_tasks.items() %}
+                        {% if task_info.status == 'completed' %}
+                            {% set total_positive = total_positive + 1 %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    <div class="col-6">
+                        <div class="text-success h4">{{ batch.completed_sites }}</div>
+                        <small class="text-muted">Успішних аналізів</small>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-primary h4">{{ batch.total_sites }}</div>
+                        <small class="text-muted">Загалом сайтів</small>
+                    </div>
+                </div>
+                
+                <div class="progress mt-3">
+                    <div class="progress-bar bg-success" style="width: {{ (batch.completed_sites / batch.total_sites * 100)|round }}%"></div>
+                </div>
+                <small class="text-muted">{{ (batch.completed_sites / batch.total_sites * 100)|round }}% успішності</small>
             </div>
         </div>
         {% endif %}
     </div>
 </div>
 
-<!-- Модальне вікно для перегляду результатів -->
+<!-- Модальне вікно для швидкого перегляду результатів -->
 <div class="modal fade" id="resultModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Результат аналізу</h5>
+                <h5 class="modal-title">Швидкий перегляд результату</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -217,6 +390,8 @@
 function refreshStatus() {
     const batchId = document.querySelector('[data-batch-id]').dataset.batchId;
     
+    showNotification('Оновлення статусу...', 'info');
+    
     fetch(`/batch/${batchId}/status`)
         .then(response => response.json())
         .then(data => {
@@ -238,6 +413,8 @@ function refreshStatus() {
             statusBadge.className = `badge batch-status bg-${statusClass}`;
             statusBadge.textContent = data.status.toUpperCase();
             
+            showNotification('Статус оновлено', 'success');
+            
             // Якщо статус змінився на завершений, оновлюємо сторінку
             if (data.status === 'completed' || data.status === 'failed') {
                 setTimeout(() => location.reload(), 2000);
@@ -245,12 +422,68 @@ function refreshStatus() {
         })
         .catch(error => {
             console.error('Помилка:', error);
+            showNotification('Помилка оновлення статусу', 'danger');
         });
 }
 
+// Оновлення статусу окремої задачі
+async function refreshTaskStatus(taskId) {
+    try {
+        const response = await fetch(`/api/analysis/status/${taskId}`);
+        const data = await response.json();
+        
+        showNotification(`Статус задачі: ${data.status} - ${data.message}`, 'info');
+        
+        if (data.status === 'completed' || data.status === 'failed') {
+            setTimeout(() => location.reload(), 1000);
+        }
+    } catch (error) {
+        showNotification('Помилка перевірки статусу задачі', 'danger');
+    }
+}
+
+// Видалення пакетного аналізу
+function deleteBatch(batchId) {
+    if (confirm('Ви впевнені, що хочете видалити цей пакетний аналіз та всі його результати?')) {
+        showNotification('Видалення...', 'info');
+        
+        fetch(`/batch/${batchId}`, { method: 'DELETE' })
+            .then(response => {
+                if (response.ok) {
+                    showNotification('Пакетний аналіз видалено', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/results';
+                    }, 1000);
+                } else {
+                    throw new Error('Помилка видалення');
+                }
+            })
+            .catch(error => {
+                showNotification('Помилка видалення: ' + error.message, 'danger');
+            });
+    }
+}
+
 // Автоматичне оновлення статусу для виконуваних аналізів
-{% if batch.status == 'running' %}
-setInterval(refreshStatus, 10000); // Кожні 10 секунд
+{% if batch.status == 'running' or batch.status == 'pending' %}
+let autoRefreshInterval = setInterval(() => {
+    refreshStatus();
+}, 10000); // Кожні 10 секунд
+
+// Зупиняємо автооновлення при закритті сторінки
+window.addEventListener('beforeunload', () => {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+});
 {% endif %}
+
+// Ініціалізація при завантаженні
+document.addEventListener('DOMContentLoaded', function() {
+    // Показуємо підказку для виконуваних аналізів
+    {% if batch.status == 'running' or batch.status == 'pending' %}
+    showNotification('Аналіз виконується. Автоматичне оновлення кожні 10 секунд.', 'info');
+    {% endif %}
+});
 </script>
 {% endblock %}
