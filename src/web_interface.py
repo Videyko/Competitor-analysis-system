@@ -401,7 +401,6 @@ async def monitor_batch_analysis(batch_id: str):
                             logger.error(f"Аналіз {site_url} провалився")
                 except Exception as e:
                     logger.error(f"Помилка перевірки статусу {site_url}: {e}")
-                    # Не змінюємо статус при помилці перевірки
 
 @app.get("/batch/{batch_id}", response_class=HTMLResponse)
 async def view_batch_analysis(request: Request, batch_id: str):
@@ -423,8 +422,9 @@ async def view_batch_analysis(request: Request, batch_id: str):
         logger.error(f"Помилка рендерингу сторінки пакетного аналізу: {e}")
         return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
+# 🆕 НОВИЙ ENDPOINT - Детальний перегляд результатів пакету
 @app.get("/batch/{batch_id}/results", response_class=HTMLResponse)
-async def view_batch_results(request: Request, batch_id: str):
+async def view_batch_results_detailed(request: Request, batch_id: str):
     """Детальний перегляд результатів пакетного аналізу"""
     if not templates:
         return HTMLResponse("<h1>Templates not available</h1>")
@@ -442,18 +442,159 @@ async def view_batch_results(request: Request, batch_id: str):
                 response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_info['task_id']}", timeout=30)
                 if response.status_code == 200:
                     detailed_results[site_url] = response.json()
+                else:
+                    logger.warning(f"Не вдалося отримати результат для {site_url}: HTTP {response.status_code}")
             except Exception as e:
                 logger.error(f"Помилка отримання результату для {site_url}: {e}")
     
     try:
-        return templates.TemplateResponse("batch_results.html", {
+        return templates.TemplateResponse("batch_results_detail.html", {
             "request": request,
             "batch": batch_result,
             "detailed_results": detailed_results
         })
     except Exception as e:
-        logger.error(f"Помилка рендерингу результатів: {e}")
+        logger.error(f"Помилка рендерингу детальних результатів: {e}")
         return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
+
+# 🆕 НОВИЙ ENDPOINT - Перегляд окремого результату
+@app.get("/result/{task_id}", response_class=HTMLResponse)
+async def view_single_result(request: Request, task_id: str):
+    """Детальний перегляд окремого результату аналізу"""
+    if not templates:
+        return HTMLResponse("<h1>Templates not available</h1>")
+    
+    try:
+        # Отримуємо результат з analysis service
+        response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_id}", timeout=30)
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            return templates.TemplateResponse("result_detail.html", {
+                "request": request,
+                "result": result_data
+            })
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Результат не знайдено")
+        elif response.status_code == 202:
+            # Аналіз ще не завершено
+            return templates.TemplateResponse("analysis_pending.html", {
+                "request": request,
+                "task_id": task_id
+            })
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Помилка отримання результату")
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Помилка отримання результату {task_id}: {e}")
+        raise HTTPException(status_code=503, detail="Сервіс аналізу недоступний")
+
+# 🆕 НОВИЙ ENDPOINT - Завантаження окремого результату
+@app.get("/result/{task_id}/download")
+async def download_single_result(task_id: str):
+    """Завантаження Excel файлу для окремого результату"""
+    try:
+        response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_id}", timeout=30)
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            
+            # Створюємо Excel файл
+            output = BytesIO()
+            
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Позитивні збіги
+                if result_data.get('positive_matches'):
+                    positive_df = pd.DataFrame([
+                        {
+                            'Ключове слово': match['keyword'],
+                            'URL': match['url'],
+                            'Кількість': match['count'],
+                            'Контекст': match['context']
+                        }
+                        for match in result_data['positive_matches']
+                    ])
+                    positive_df.to_excel(writer, sheet_name='Позитивні збіги', index=False)
+                
+                # Негативні збіги
+                if result_data.get('negative_matches'):
+                    negative_df = pd.DataFrame([
+                        {
+                            'Ключове слово': match['keyword'],
+                            'URL': match['url'],
+                            'Кількість': match['count'],
+                            'Контекст': match['context']
+                        }
+                        for match in result_data['negative_matches']
+                    ])
+                    negative_df.to_excel(writer, sheet_name='Негативні збіги', index=False)
+                
+                # Детальна статистика
+                if result_data.get('detailed_stats'):
+                    stats_data = []
+                    
+                    # Статистика по ключових словах
+                    if result_data['detailed_stats'].get('keyword_stats'):
+                        for keyword, stats in result_data['detailed_stats']['keyword_stats'].items():
+                            if stats['total_mentions'] > 0:
+                                for page in stats['pages_found']:
+                                    stats_data.append({
+                                        'Тип': 'Позитивне',
+                                        'Ключове слово': keyword,
+                                        'Всього згадок': stats['total_mentions'],
+                                        'URL': page['url'],
+                                        'Згадок на сторінці': page['count'],
+                                        'Контекст': page['context']
+                                    })
+                    
+                    # Статистика по негативних словах
+                    if result_data['detailed_stats'].get('forbidden_stats'):
+                        for keyword, stats in result_data['detailed_stats']['forbidden_stats'].items():
+                            if stats['total_mentions'] > 0:
+                                for page in stats['pages_found']:
+                                    stats_data.append({
+                                        'Тип': 'Негативне',
+                                        'Ключове слово': keyword,
+                                        'Всього згадок': stats['total_mentions'],
+                                        'URL': page['url'],
+                                        'Згадок на сторінці': page['count'],
+                                        'Контекст': page['context']
+                                    })
+                    
+                    if stats_data:
+                        pd.DataFrame(stats_data).to_excel(writer, sheet_name='Детальна статистика', index=False)
+                
+                # Загальна статистика
+                summary_data = [
+                    ['Сайт', result_data['site_url']],
+                    ['Сторінок проаналізовано', result_data['pages_analyzed']],
+                    ['Позитивних збігів', len(result_data.get('positive_matches', []))],
+                    ['Негативних збігів', len(result_data.get('negative_matches', []))],
+                    ['Час аналізу (сек)', result_data['analysis_time']],
+                    ['Дата завершення', result_data['completed_at']],
+                    ['Task ID', task_id]
+                ]
+                
+                stats_df = pd.DataFrame(summary_data, columns=['Параметр', 'Значення'])
+                stats_df.to_excel(writer, sheet_name='Загальна інформація', index=False)
+            
+            output.seek(0)
+            
+            # Створюємо безпечне ім'я файлу
+            site_name = result_data['site_url'].replace('https://', '').replace('http://', '').replace('/', '_').replace(':', '_')
+            filename = f"analysis_{site_name}_{task_id[:8]}.xlsx"
+            
+            return StreamingResponse(
+                BytesIO(output.read()),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Результат не знайдено")
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Помилка завантаження результату {task_id}: {e}")
+        raise HTTPException(status_code=503, detail="Сервіс аналізу недоступний")
 
 @app.get("/batch/{batch_id}/download")
 async def download_batch_results(batch_id: str):
@@ -522,7 +663,7 @@ async def download_batch_results(batch_id: str):
     return StreamingResponse(
         BytesIO(output.read()),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=analysis_results_{batch_id[:8]}.xlsx"}
+        headers={"Content-Disposition": f"attachment; filename=batch_results_{batch_id[:8]}.xlsx"}
     )
 
 @app.get("/batch/{batch_id}/status")
@@ -568,6 +709,20 @@ async def delete_batch_analysis(batch_id: str):
     logger.info(f"Видалено пакетний аналіз: {batch_id}")
     return {"message": "Результати пакетного аналізу видалені"}
 
+# 🆕 НОВИЙ ENDPOINT - API статусу аналізу
+@app.get("/api/analysis/status/{task_id}")
+async def get_analysis_status(task_id: str):
+    """Проксі для отримання статусу аналізу"""
+    try:
+        response = requests.get(f"{ANALYSIS_SERVICE_URL}/status/{task_id}", timeout=30)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Помилка отримання статусу аналізу {task_id}: {e}")
+        raise HTTPException(status_code=503, detail="Сервіс аналізу недоступний")
+
 # API endpoints для отримання статистики
 @app.get("/api/configs")
 async def get_configs():
@@ -586,6 +741,10 @@ async def get_analysis_result(task_id: str):
         response = requests.get(f"{ANALYSIS_SERVICE_URL}/result/{task_id}", timeout=30)
         if response.status_code == 200:
             return response.json()
+        elif response.status_code == 202:
+            raise HTTPException(status_code=202, detail="Аналіз ще не завершено")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Результат не знайдено")
         else:
             raise HTTPException(status_code=response.status_code, detail=response.text)
     except requests.exceptions.RequestException as e:
