@@ -28,6 +28,7 @@ from shared.logger import setup_logger
 from shared.database import db_manager
 from shared.redis_client import web_redis, web_cache
 from shared.utils import generate_task_id, parse_keywords_list, parse_urls_list, parse_emails_list
+from error_handlers import add_error_handlers
 
 # Налаштування логування
 logger = setup_logger('web_service')
@@ -760,6 +761,13 @@ try:
     logger.info("Директорії створено")
 except Exception as e:
     logger.warning(f"Не вдалося створити директорії: {e}")
+
+# 🆕 ДОДАЄМО ERROR HANDLERS
+try:
+    add_error_handlers(app, templates)
+    logger.info("Error handlers додано")
+except Exception as e:
+    logger.error(f"Помилка додавання error handlers: {e}")
 
 if __name__ == "__main__":
     import uvicorn
