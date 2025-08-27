@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}404 - Сторінка не знайдена{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <div class="card">
+                <div class="card-body py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-search" style="font-size: 6rem; color: var(--warning-color);"></i>
+                    </div>
+                    
+                    <h1 class="display-4 mb-3">404</h1>
+                    <h2 class="mb-3">Сторінка не знайдена</h2>
+                    
+                    <p class="lead text-muted mb-4">
+                        {{ error_message or "Запитувана сторінка не існує або була переміщена." }}
+                    </p>
+                    
+                    {% if requested_path %}
+                    <div class="alert alert-light">
+                        <strong>Запитуваний шлях:</strong> <code>{{ requested_path }}</code>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="d-flex justify-content-center gap-3 flex-wrap">
+                        <a href="/" class="btn btn-primary">
+                            <i class="fas fa-home"></i> Головна сторінка
+                        </a>
+                        <a href="/results" class="btn btn-outline-primary">
+                            <i class="fas fa-chart-bar"></i> Результати
+                        </a>
+                        <a href="/config/new" class="btn btn-outline-success">
+                            <i class="fas fa-plus"></i> Новий аналіз
+                        </a>
+                        <button class="btn btn-outline-secondary" onclick="history.back()">
+                            <i class="fas fa-arrow-left"></i> Назад
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-lightbulb"></i> Можливо, ви шукали:</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Основні сторінки:</h6>
+                            <ul class="list-unstyled">
+                                <li><a href="/" class="text-decoration-none"><i class="fas fa-home"></i> Головна</a></li>
+                                <li><a href="/results" class="text-decoration-none"><i class="fas fa-chart-bar"></i> Результати аналізів</a></li>
+                                <li><a href="/config/new" class="text-decoration-none"><i class="fas fa-plus"></i> Нова конфігурація</a></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>API документація:</h6>
+                            <ul class="list-unstyled">
+                                <li><a href="/api/analysis/docs" class="text-decoration-none"><i class="fas fa-cog"></i> Analysis API</a></li>
+                                <li><a href="/api/email/docs" class="text-decoration-none"><i class="fas fa-envelope"></i> Email API</a></li>
+                                <li><a href="/health" class="text-decoration-none"><i class="fas fa-heartbeat"></i> Health Check</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
