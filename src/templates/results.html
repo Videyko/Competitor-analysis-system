@@ -115,8 +115,10 @@
                             <!-- Прогрес бар -->
                             {% set progress = ((batch.completed_sites + batch.failed_sites) / batch.total_sites * 100) | round | int %}
                             <div class="progress mb-3" style="height: 10px;">
-                                <div class="progress-bar bg-success" style="width: {{ (batch.completed_sites / batch.total_sites * 100) | round | int }}%"></div>
-                                <div class="progress-bar bg-danger" style="width: {{ (batch.failed_sites / batch.total_sites * 100) | round | int }}%"></div>
+                                <div class="progress-bar bg-success" 
+                                     style="width: {{ (batch.completed_sites / batch.total_sites * 100) | round | int }}%"></div>
+                                <div class="progress-bar bg-danger" 
+                                     style="width: {{ (batch.failed_sites / batch.total_sites * 100) | round | int }}%"></div>
                             </div>
 
                             <div class="d-flex justify-content-between align-items-center">
@@ -125,17 +127,26 @@
                                     {{ batch.created_at.strftime('%d.%m.%Y %H:%M') }}
                                 </small>
                                 
-                                <div>
-                                    {% if batch.status == 'running' %}
-                                    <button class="btn btn-sm btn-outline-secondary" 
+                                <div class="btn-group btn-group-sm">
+                                    {% if batch.status == 'running' or batch.status == 'pending' %}
+                                    <button class="btn btn-outline-secondary" 
                                             onclick="refreshBatchStatus('{{ batch.id }}')">
-                                        <i class="fas fa-sync"></i> Оновити
+                                        <i class="fas fa-sync"></i>
                                     </button>
                                     {% endif %}
                                     
-                                    <a href="/batch/{{ batch.id }}" class="btn btn-sm btn-primary">
-                                        <i class="fas fa-eye"></i> Переглянути
+                                    <a href="/batch/{{ batch.id }}" class="btn btn-primary">
+                                        <i class="fas fa-eye"></i>
                                     </a>
+                                    
+                                    {% if batch.status == 'completed' %}
+                                    <a href="/batch/{{ batch.id }}/results" class="btn btn-success">
+                                        <i class="fas fa-chart-bar"></i>
+                                    </a>
+                                    <a href="/batch/{{ batch.id }}/download" class="btn btn-outline-primary">
+                                        <i class="fas fa-download"></i>
+                                    </a>
+                                    {% endif %}
                                 </div>
                             </div>
 
@@ -166,17 +177,25 @@
                                 <div class="list-group list-group-flush">
                                     {% for site_url, task_info in batch.analysis_tasks.items() %}
                                     <div class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                        <div>
+                                        <div class="flex-grow-1">
                                             <small class="text-muted">{{ site_url }}</small>
                                         </div>
-                                        <span class="badge bg-{% if task_info.status == 'completed' %}success{% elif task_info.status == 'failed' %}danger{% else %}warning{% endif %}">
-                                            {{ task_info.status }}
-                                        </span>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge bg-{% if task_info.status == 'completed' %}success{% elif task_info.status == 'failed' %}danger{% else %}warning{% endif %}">
+                                                {{ task_info.status }}
+                                            </span>
+                                            {% if task_info.status == 'completed' and task_info.task_id %}
+                                            <a href="/result/{{ task_info.task_id }}" 
+                                               class="btn btn-xs btn-outline-primary" target="_blank">
+                                                <i class="fas fa-external-link-alt"></i>
+                                            </a>
+                                            {% endif %}
+                                        </div>
                                     </div>
                                     {% endfor %}
                                 </div>
                             </div>
-                            <button class="btn btn-sm btn-link p-0" type="button" 
+                            <button class="btn btn-sm btn-link p-0 mt-2" type="button" 
                                     data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
                                 <i class="fas fa-chevron-down"></i> Показати деталі
                             </button>
@@ -194,29 +213,6 @@
                 <a href="/config/new">Створіть конфігурацію</a> та запустіть перший аналіз.
             </div>
         {% endif %}
-    </div>
-</div>
-
-<!-- Модальне вікно для перегляду результатів -->
-<div class="modal fade" id="resultModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Результат аналізу</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="resultModalBody">
-                <div class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Завантаження...</span>
-                    </div>
-                    <p class="mt-2">Завантаження результату...</p>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
-            </div>
-        </div>
     </div>
 </div>
 {% endblock %}
@@ -271,14 +267,20 @@ function clearFilters() {
 
 // Оновлення статусу пакету
 function refreshBatchStatus(batchId) {
+    showNotification('Оновлення статусу...', 'info');
+    
     fetch(`/batch/${batchId}/status`)
         .then(response => response.json())
         .then(data => {
             // Оновлюємо сторінку для відображення нових даних
-            location.reload();
+            showNotification('Статус оновлено', 'success');
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
         })
         .catch(error => {
             console.error('Помилка оновлення статусу:', error);
+            showNotification('Помилка оновлення статусу', 'danger');
         });
 }
 
@@ -291,13 +293,22 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             location.reload();
         }, 30000);
+        
+        // Показуємо індикатор автооновлення
+        showNotification(`Автооновлення через 30 секунд (${runningBatches.length} аналізів виконується)`, 'info');
     }
 });
 
-// Показ деталей результату в модальному вікні
+// 🆕 ВИПРАВЛЕНА ФУНКЦІЯ - Показ деталей результату
 function showResultDetails(taskId) {
-    const modal = new bootstrap.Modal(document.getElementById('resultModal'));
-    const modalBody = document.getElementById('resultModalBody');
+    // Відкриваємо окрему сторінку замість модального вікна
+    window.open(`/result/${taskId}`, '_blank');
+}
+
+// 🆕 НОВА ФУНКЦІЯ - Швидкий перегляд в модальному вікні
+async function showResultModal(taskId) {
+    const modal = document.getElementById('resultModal') || createResultModal();
+    const modalBody = modal.querySelector('.modal-body');
     
     modalBody.innerHTML = `
         <div class="text-center">
@@ -308,56 +319,55 @@ function showResultDetails(taskId) {
         </div>
     `;
     
-    modal.show();
+    const modalInstance = new bootstrap.Modal(modal);
+    modalInstance.show();
     
-    fetch(`/api/analysis/result/${taskId}`)
-        .then(response => response.json())
-        .then(data => {
+    try {
+        const response = await fetch(`/api/analysis/result/${taskId}`);
+        
+        if (response.ok) {
+            const data = await response.json();
             modalBody.innerHTML = `
-                <h6>Сайт: ${data.site_url}</h6>
+                <div class="mb-3">
+                    <h6>Сайт: <a href="${data.site_url}" target="_blank" class="text-decoration-none">${data.site_url}</a></h6>
+                    <small class="text-muted">Task ID: ${data.task_id}</small>
+                </div>
                 <hr>
-                <div class="row mb-3">
+                <div class="row mb-3 text-center">
                     <div class="col-md-3">
-                        <div class="text-center">
-                            <div class="h4 text-primary">${data.pages_analyzed}</div>
-                            <small class="text-muted">Сторінок проаналізовано</small>
-                        </div>
+                        <div class="h4 text-primary">${data.pages_analyzed}</div>
+                        <small class="text-muted">Сторінок проаналізовано</small>
                     </div>
                     <div class="col-md-3">
-                        <div class="text-center">
-                            <div class="h4 text-success">${data.positive_matches.length}</div>
-                            <small class="text-muted">Позитивних збігів</small>
-                        </div>
+                        <div class="h4 text-success">${data.positive_matches.length}</div>
+                        <small class="text-muted">Позитивних збігів</small>
                     </div>
                     <div class="col-md-3">
-                        <div class="text-center">
-                            <div class="h4 text-danger">${data.negative_matches.length}</div>
-                            <small class="text-muted">Негативних збігів</small>
-                        </div>
+                        <div class="h4 text-danger">${data.negative_matches.length}</div>
+                        <small class="text-muted">Негативних збігів</small>
                     </div>
                     <div class="col-md-3">
-                        <div class="text-center">
-                            <div class="h4 text-info">${data.analysis_time.toFixed(1)}с</div>
-                            <small class="text-muted">Час аналізу</small>
-                        </div>
+                        <div class="h4 text-info">${data.analysis_time.toFixed(1)}с</div>
+                        <small class="text-muted">Час аналізу</small>
                     </div>
                 </div>
                 
                 ${data.positive_matches.length > 0 ? `
-                <h6 class="text-success">Позитивні збіги:</h6>
+                <h6 class="text-success">Позитивні збіги (топ 5):</h6>
                 <div class="list-group mb-3">
                     ${data.positive_matches.slice(0, 5).map(match => `
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${match.keyword}</h6>
-                                <small>${match.count} разів</small>
+                                <h6 class="mb-1"><span class="badge bg-success">${match.keyword}</span></h6>
+                                <small><strong>${match.count}</strong> разів</small>
                             </div>
                             <p class="mb-1"><small><a href="${match.url}" target="_blank" class="text-decoration-none">${match.url}</a></small></p>
                             <small class="text-muted">${match.context}</small>
                         </div>
                     `).join('')}
                 </div>
-                ` : ''}
+                ${data.positive_matches.length > 5 ? `<p><small class="text-muted">... та ще ${data.positive_matches.length - 5} збігів</small></p>` : ''}
+                ` : '<div class="alert alert-warning"><i class="fas fa-search"></i> Позитивні збіги не знайдені</div>'}
                 
                 ${data.negative_matches.length > 0 ? `
                 <h6 class="text-danger">Негативні збіги:</h6>
@@ -365,8 +375,8 @@ function showResultDetails(taskId) {
                     ${data.negative_matches.slice(0, 5).map(match => `
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${match.keyword}</h6>
-                                <small>${match.count} разів</small>
+                                <h6 class="mb-1"><span class="badge bg-danger">${match.keyword}</span></h6>
+                                <small><strong>${match.count}</strong> разів</small>
                             </div>
                             <p class="mb-1"><small><a href="${match.url}" target="_blank" class="text-decoration-none">${match.url}</a></small></p>
                             <small class="text-muted">${match.context}</small>
@@ -376,21 +386,113 @@ function showResultDetails(taskId) {
                 ` : ''}
                 
                 ${data.ai_analysis ? `
-                <h6>ШІ Аналіз:</h6>
+                <h6><i class="fas fa-robot"></i> ШІ Аналіз:</h6>
                 <div class="alert alert-info">
-                    <pre class="mb-0" style="white-space: pre-wrap;">${data.ai_analysis}</pre>
+                    <pre class="mb-0" style="white-space: pre-wrap;">${data.ai_analysis.substring(0, 500)}${data.ai_analysis.length > 500 ? '...' : ''}</pre>
                 </div>
                 ` : ''}
-            `;
-        })
-        .catch(error => {
-            modalBody.innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    Помилка завантаження результату: ${error.message}
+                
+                <hr>
+                <div class="d-flex justify-content-center gap-2">
+                    <a href="/result/${data.task_id}" class="btn btn-primary" target="_blank">
+                        <i class="fas fa-external-link-alt"></i> Повний перегляд
+                    </a>
+                    <button class="btn btn-outline-primary" onclick="downloadResult('${data.task_id}')">
+                        <i class="fas fa-download"></i> Завантажити Excel
+                    </button>
                 </div>
             `;
-        });
+        } else if (response.status === 202) {
+            modalBody.innerHTML = `
+                <div class="alert alert-warning text-center">
+                    <i class="fas fa-clock"></i>
+                    <h5>Аналіз ще виконується</h5>
+                    <p>Результат буде доступний після завершення аналізу.</p>
+                    <a href="/result/${taskId}" class="btn btn-primary" target="_blank">
+                        Відкрити сторінку очікування
+                    </a>
+                </div>
+            `;
+        } else if (response.status === 404) {
+            modalBody.innerHTML = `
+                <div class="alert alert-danger text-center">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h5>Результат не знайдено</h5>
+                    <p>Можливо, результат був видалений або ще не створений.</p>
+                </div>
+            `;
+        } else {
+            throw new Error(`HTTP ${response.status}`);
+        }
+    } catch (error) {
+        modalBody.innerHTML = `
+            <div class="alert alert-danger text-center">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h5>Помилка завантаження</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+function createResultModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'resultModal';
+    modal.tabIndex = -1;
+    modal.innerHTML = `
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Швидкий перегляд результату</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    return modal;
+}
+
+// 🆕 НОВА ФУНКЦІЯ - Показ результатів пакету
+function showBatchResults(batchId) {
+    window.location.href = `/batch/${batchId}/results`;
+}
+
+// 🆕 ОНОВЛЕНА ФУНКЦІЯ завантаження
+async function downloadResult(taskId) {
+    try {
+        showNotification('Підготовка файлу для завантаження...', 'info');
+        
+        const response = await fetch(`/result/${taskId}/download`);
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analysis_result_${taskId.substring(0, 8)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showNotification('Файл завантажено', 'success');
+        } else if (response.status === 404) {
+            showNotification('Результат не знайдено', 'danger');
+        } else if (response.status === 202) {
+            showNotification('Аналіз ще не завершено. Спробуйте пізніше.', 'warning');
+        } else {
+            throw new Error(`HTTP ${response.status}`);
+        }
+    } catch (error) {
+        console.error('Помилка завантаження:', error);
+        showNotification('Помилка завантаження файлу: ' + error.message, 'danger');
+    }
 }
 </script>
 {% endblock %}
