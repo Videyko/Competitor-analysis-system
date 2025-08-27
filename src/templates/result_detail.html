@@ -1,0 +1,471 @@
+{% extends "base.html" %}
+
+{% block title %}Результат аналізу - {{ result.site_url }}{% endblock %}
+{% block page_type %}result{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-chart-line"></i> Результат аналізу</h1>
+                <div>
+                    <button class="btn btn-outline-secondary me-2" onclick="history.back()">
+                        <i class="fas fa-arrow-left"></i> Назад
+                    </button>
+                    <a href="/result/{{ result.task_id }}/download" class="btn btn-primary">
+                        <i class="fas fa-download"></i> Завантажити Excel
+                    </a>
+                </div>
+            </div>
+
+            <!-- Інформація про сайт -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-globe"></i>
+                        <a href="{{ result.site_url }}" target="_blank" class="text-white text-decoration-none">
+                            {{ result.site_url }}
+                        </a>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <div class="stat-card neutral">
+                                <div class="stat-number">{{ result.pages_analyzed }}</div>
+                                <div class="stat-label">Сторінок проаналізовано</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card positive">
+                                <div class="stat-number">{{ result.positive_matches|length }}</div>
+                                <div class="stat-label">Позитивних збігів</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card negative">
+                                <div class="stat-number">{{ result.negative_matches|length }}</div>
+                                <div class="stat-label">Негативних збігів</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card neutral">
+                                <div class="stat-number">{{ result.analysis_time|round(1) }}с</div>
+                                <div class="stat-label">Час аналізу</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <p><strong>Task ID:</strong> <code>{{ result.task_id }}</code>
+                                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyToClipboard('{{ result.task_id }}')">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </p>
+                            <p><strong>Завершено:</strong> {{ result.completed_at }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Сторінок з позитивними словами:</strong> {{ result.pages_with_positive|length }}</p>
+                            <p><strong>Сторінок з негативними словами:</strong> {{ result.pages_with_negative|length }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Детальна статистика -->
+            {% if result.detailed_stats and result.detailed_stats.summary %}
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h5><i class="fas fa-thumbs-up"></i> Позитивні ключові слова</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-6">
+                                    <div class="h3 text-success">{{ result.detailed_stats.summary.found_keywords }}</div>
+                                    <small class="text-muted">Знайдено</small>
+                                </div>
+                                <div class="col-6">
+                                    <div class="h3 text-muted">{{ result.detailed_stats.summary.not_found_keywords }}</div>
+                                    <small class="text-muted">Не знайдено</small>
+                                </div>
+                            </div>
+                            <div class="progress mt-2">
+                                <div class="progress-bar bg-success" style="width: {{ (result.detailed_stats.summary.found_keywords / result.detailed_stats.summary.total_keywords * 100)|round }}%"></div>
+                            </div>
+                            <small class="text-muted">{{ (result.detailed_stats.summary.found_keywords / result.detailed_stats.summary.total_keywords * 100)|round }}% покриття</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-danger text-white">
+                            <h5><i class="fas fa-thumbs-down"></i> Негативні ключові слова</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-6">
+                                    <div class="h3 text-danger">{{ result.detailed_stats.summary.found_forbidden }}</div>
+                                    <small class="text-muted">Знайдено</small>
+                                </div>
+                                <div class="col-6">
+                                    <div class="h3 text-success">{{ result.detailed_stats.summary.not_found_forbidden }}</div>
+                                    <small class="text-muted">Не знайдено</small>
+                                </div>
+                            </div>
+                            {% if result.detailed_stats.summary.total_forbidden > 0 %}
+                            <div class="progress mt-2">
+                                <div class="progress-bar bg-danger" style="width: {{ (result.detailed_stats.summary.found_forbidden / result.detailed_stats.summary.total_forbidden * 100)|round }}%"></div>
+                            </div>
+                            <small class="text-muted">{{ (result.detailed_stats.summary.found_forbidden / result.detailed_stats.summary.total_forbidden * 100)|round }}% негативних слів знайдено</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Позитивні результати -->
+            {% if result.positive_matches %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5><i class="fas fa-thumbs-up"></i> Позитивні ключові слова ({{ result.positive_matches|length }})</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="positiveTable">
+                            <thead>
+                                <tr>
+                                    <th>Ключове слово</th>
+                                    <th>URL</th>
+                                    <th>Кількість</th>
+                                    <th>Контекст</th>
+                                    <th>Дії</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for match in result.positive_matches %}
+                                <tr>
+                                    <td>
+                                        <span class="badge bg-success">{{ match.keyword }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="{{ match.url }}" target="_blank" class="text-decoration-none">
+                                            <i class="fas fa-external-link-alt"></i> {{ match.url|truncate(60) }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <strong class="text-success">{{ match.count }}</strong>
+                                    </td>
+                                    <td>
+                                        <small class="context text-muted">{{ match.context|truncate(150) }}</small>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('{{ match.url }}')">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-warning">
+                <i class="fas fa-search"></i>
+                <strong>Позитивні ключові слова не знайдені.</strong>
+                Рекомендується перевірити правильність написання або розглянути альтернативні варіанти.
+            </div>
+            {% endif %}
+
+            <!-- Не знайдені позитивні слова -->
+            {% if result.detailed_stats and result.detailed_stats.not_found_keywords %}
+            <div class="card mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5><i class="fas fa-search-minus"></i> Не знайдені позитивні ключові слова</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <h6>Ці ключові слова не були знайдені на сайті:</h6>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for keyword in result.detailed_stats.not_found_keywords %}
+                            <span class="badge bg-warning text-dark">{{ keyword }}</span>
+                            {% endfor %}
+                        </div>
+                        <hr>
+                        <h6>💡 Рекомендації:</h6>
+                        <ul class="mb-0">
+                            <li>Перевірити правильність написання ключових слів</li>
+                            <li>Розглянути синоніми або альтернативні варіанти</li>
+                            <li>Звернутися до партнера щодо відсутності згадок</li>
+                            <li>Перевірити чи слова написані тією ж мовою що і контент сайту</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Негативні результати -->
+            {% if result.negative_matches %}
+            <div class="card mb-4">
+                <div class="card-header bg-danger text-white">
+                    <h5><i class="fas fa-thumbs-down"></i> Негативні ключові слова ({{ result.negative_matches|length }})</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger">
+                        <strong>⚠️ Увага!</strong> Знайдені згадки конкурентів або заборонених слів.
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="negativeTable">
+                            <thead>
+                                <tr>
+                                    <th>Ключове слово</th>
+                                    <th>URL</th>
+                                    <th>Кількість</th>
+                                    <th>Контекст</th>
+                                    <th>Дії</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for match in result.negative_matches %}
+                                <tr>
+                                    <td>
+                                        <span class="badge bg-danger">{{ match.keyword }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="{{ match.url }}" target="_blank" class="text-decoration-none">
+                                            <i class="fas fa-external-link-alt"></i> {{ match.url|truncate(60) }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <strong class="text-danger">{{ match.count }}</strong>
+                                    </td>
+                                    <td>
+                                        <small class="context text-muted">{{ match.context|truncate(150) }}</small>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('{{ match.url }}')">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Не знайдені негативні слова (позитивно!) -->
+            {% if result.detailed_stats and result.detailed_stats.not_found_forbidden %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5><i class="fas fa-shield-alt"></i> Хороша новина!</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-success">
+                        <h6>✅ Ці негативні ключові слова НЕ були знайдені:</h6>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for keyword in result.detailed_stats.not_found_forbidden %}
+                            <span class="badge bg-success">{{ keyword }}</span>
+                            {% endfor %}
+                        </div>
+                        <hr>
+                        <p class="mb-0"><em>Це позитивний показник - партнер не згадує ваших конкурентів!</em></p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- ШІ аналіз -->
+            {% if result.ai_analysis %}
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5><i class="fas fa-robot"></i> ШІ Аналіз та рекомендації</h5>
+                </div>
+                <div class="card-body">
+                    <div class="ai-analysis">
+                        <pre style="white-space: pre-wrap; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">{{ result.ai_analysis }}</pre>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Корисні посилання -->
+            <div class="row">
+                {% if result.pages_with_positive %}
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h5><i class="fas fa-link"></i> Сторінки з позитивними словами ({{ result.pages_with_positive|length }})</h5>
+                        </div>
+                        <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                            <div class="list-group list-group-flush">
+                                {% for url in result.pages_with_positive %}
+                                <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                    <a href="{{ url }}" target="_blank" class="text-decoration-none text-truncate me-2">
+                                        <i class="fas fa-external-link-alt"></i> {{ url|truncate(70) }}
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('{{ url }}')">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if result.pages_with_negative %}
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-danger text-white">
+                            <h5><i class="fas fa-link"></i> Сторінки з негативними словами ({{ result.pages_with_negative|length }})</h5>
+                        </div>
+                        <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                            <div class="list-group list-group-flush">
+                                {% for url in result.pages_with_negative %}
+                                <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                    <a href="{{ url }}" target="_blank" class="text-decoration-none text-truncate me-2">
+                                        <i class="fas fa-external-link-alt"></i> {{ url|truncate(70) }}
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('{{ url }}')">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Метадані -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Технічна інформація</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong>Task ID:</strong> <code>{{ result.task_id }}</code></p>
+                            <p><strong>Статус:</strong> 
+                                <span class="badge bg-{% if result.status == 'completed' %}success{% elif result.status == 'failed' %}danger{% else %}warning{% endif %}">
+                                    {{ result.status|upper }}
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Дата створення:</strong> {{ result.get('created_at', 'Невідомо') }}</p>
+                            <p><strong>Дата завершення:</strong> {{ result.completed_at }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Час аналізу:</strong> {{ result.analysis_time|round(2) }} секунд</p>
+                            <p><strong>Ефективність:</strong> {{ (result.pages_analyzed / result.analysis_time)|round(1) }} сторінок/сек</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Функція копіювання в буфер обміну
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('Скопійовано в буфер обміну', 'success');
+    }).catch(() => {
+        showNotification('Помилка копіювання', 'danger');
+    });
+}
+
+// Функція показу уведомлень
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show`;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    
+    notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check' : type === 'danger' ? 'exclamation-triangle' : 'info'}"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+// Сортування таблиць
+document.addEventListener('DOMContentLoaded', function() {
+    // Простий пошук в таблицях
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'form-control mb-3';
+    searchInput.placeholder = 'Пошук в результатах...';
+    
+    // Додаємо поле пошуку перед першою таблицею
+    const firstTable = document.querySelector('table');
+    if (firstTable) {
+        firstTable.parentNode.insertBefore(searchInput, firstTable);
+        
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const rows = document.querySelectorAll('table tbody tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                if (text.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    }
+});
+
+// Експорт в різних форматах
+function exportResults(format) {
+    const taskId = '{{ result.task_id }}';
+    
+    if (format === 'excel') {
+        window.location.href = `/result/${taskId}/download`;
+    } else if (format === 'json') {
+        fetch(`/api/analysis/result/${taskId}`)
+            .then(response => response.json())
+            .then(data => {
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `analysis_${taskId}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+    }
+}
+</script>
+{% endblock %}
