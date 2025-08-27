@@ -12,9 +12,9 @@ RUN useradd -m -s /bin/bash appuser
 # Робоча директорія
 WORKDIR /app
 
-# Копіювання залежностей
-COPY requirements/analysis.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Копіювання ВСІХ requirements файлів
+COPY requirements/ requirements/
+RUN pip install --no-cache-dir -r requirements/analysis.txt
 
 # Копіювання коду
 COPY src/analysis_service.py .
