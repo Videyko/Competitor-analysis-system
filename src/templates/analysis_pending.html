@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Аналіз виконується{% endblock %}
+{% block page_type %}analysis{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card text-center">
+                <div class="card-body py-5">
+                    <div class="mb-4">
+                        <div class="spinner-border spinner-border-lg text-primary" role="status" style="width: 4rem; height: 4rem;">
+                            <span class="visually-hidden">Завантаження...</span>
+                        </div>
+                    </div>
+                    
+                    <h2 class="card-title mb-3">
+                        <i class="fas fa-cogs"></i> Аналіз виконується
+                    </h2>
+                    
+                    <p class="card-text text-muted mb-4">
+                        Ваш аналіз обробляється. Це може тривати кілька хвилин залежно від розміру сайту.
+                    </p>
+                    
+                    <div class="alert alert-info">
+                        <strong>ID задачі:</strong> <code>{{ task_id }}</code>
+                    </div>
+                    
+                    <div class="progress mb-4">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             id="progressBar" style="width: 0%">
+                             <span id="progressText">0%</span>
+                        </div>
+                    </div>
+                    
+                    <div id="statusMessage" class="alert alert-info">
+                        <i class="fas fa-clock"></i> Ініціалізація аналізу...
+                    </div>
+                    
+                    <div class="d-flex justify-content-center gap-3">
+                        <button class="btn btn-primary" onclick="checkStatus()" id="checkBtn">
+                            <i class="fas fa-sync"></i> Перевірити статус
+                        </button>
+                        <a href="/results" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Повернутися до результатів
+                        </a>
+                        <a href="/" class="btn btn-outline-secondary">
+                            <i class="fas fa-home"></i> Головна
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Що відбувається?</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Етапи аналізу:</h6>
+                            <ol>
+                                <li>Сканування сайту</li>
+                                <li>Пошук посилань</li>
+                                <li>Завантаження контенту</li>
+                                <li>Аналіз ключових слів</li>
+                                <li>ШІ обробка результатів</li>
+                            </ol>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Що буде в результаті:</h6>
+                            <ul>
+                                <li>Детальна статистика</li>
+                                <li>Список знайдених сторінок</li>
+                                <li>Контекст кожної знахідки</li>
+                                <li>Excel файл для завантаження</li>
+                                <li>ШІ рекомендації</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let checkInterval = null;
+let attempts = 0;
+const maxAttempts = 120; // 20 хвилин (10 сек * 120)
+
+async function checkStatus() {
+    const taskId = '{{ task_id }}';
+    const checkBtn = document.getElementById('checkBtn');
+    const statusMessage = document.getElementById('statusMessage');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    try {
+        checkBtn.disabled = true;
+        checkBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Перевірка...';
+        
+        const response = await fetch(`/api/analysis/status/${taskId}`);
+        const data = await response.json();
+        
+        attempts++;
+        
+        // Оновлюємо прогрес
+        const progress = data.progress || 0;
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = `${progress}%`;
+        
+        // Оновлюємо статус
+        statusMessage.innerHTML = `<i class="fas fa-${getStatusIcon(data.status)}"></i> ${data.message || data.status}`;
+        statusMessage.className = `alert alert-${getStatusClass(data.status)}`;
+        
+        if (data.status === 'completed') {
+            clearInterval(checkInterval);
+            statusMessage.innerHTML = '<i class="fas fa-check-circle"></i> Аналіз завершено! Переадресація...';
+            statusMessage.className = 'alert alert-success';
+            
+            setTimeout(() => {
+                window.location.href = `/result/${taskId}`;
+            }, 2000);
+            
+        } else if (data.status === 'failed') {
+            clearInterval(checkInterval);
+            statusMessage.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Аналіз провалився: ${data.message || 'Невідома помилка'}`;
+            statusMessage.className = 'alert alert-danger';
+            
+        } else if (attempts >= maxAttempts) {
+            clearInterval(checkInterval);
+            statusMessage.innerHTML = '<i class="fas fa-clock"></i> Перевищено час очікування. Спробуйте пізніше.';
+            statusMessage.className = 'alert alert-warning';
+        }
+        
+    } catch (error) {
+        console.error('Помилка перевірки статусу:', error);
+        statusMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Помилка перевірки статусу';
+        statusMessage.className = 'alert alert-danger';
+    } finally {
+        checkBtn.disabled = false;
+        checkBtn.innerHTML = '<i class="fas fa-sync"></i> Перевірити статус';
+    }
+}
+
+function getStatusIcon(status) {
+    const icons = {
+        'pending': 'clock',
+        'running': 'cogs',
+        'completed': 'check-circle',
+        'failed': 'exclamation-triangle'
+    };
+    return icons[status] || 'question';
+}
+
+function getStatusClass(status) {
+    const classes = {
+        'pending': 'warning',
+        'running': 'info',
+        'completed': 'success',
+        'failed': 'danger'
+    };
+    return classes[status] || 'secondary';
+}
+
+// Автоматична перевірка кожні 10 секунд
+document.addEventListener('DOMContentLoaded', function() {
+    checkStatus(); // Перевіряємо відразу
+    checkInterval = setInterval(checkStatus, 10000);
+});
+
+// Очищення інтервалу при закритті сторінки
+window.addEventListener('beforeunload', function() {
+    if (checkInterval) {
+        clearInterval(checkInterval);
+    }
+});
+</script>
+{% endblock %}
