@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}503 - Сервіс недоступний{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <div class="card">
+                <div class="card-body py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-server" style="font-size: 6rem; color: var(--warning-color);"></i>
+                    </div>
+                    
+                    <h1 class="display-4 mb-3">503</h1>
+                    <h2 class="mb-3">Сервіс тимчасово недоступний</h2>
+                    
+                    <p class="lead text-muted mb-4">
+                        {{ service_name or "Сервіс аналізу" }} тимчасово недоступний. 
+                        Спробуйте оновити сторінку через кілька хвилин.
+                    </p>
+                    
+                    <div class="alert alert-warning">
+                        <strong><i class="fas fa-info-circle"></i> Можливі причини:</strong>
+                        <ul class="list-unstyled mt-2 mb-0 text-start">
+                            <li>• Технічні роботи на сервері</li>
+                            <li>• Високе навантаження на систему</li>
+                            <li>• Тимчасові проблеми з мережею</li>
+                            <li>• Оновлення сервісу</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="d-flex justify-content-center gap-3 flex-wrap">
+                        <button class="btn btn-primary" onclick="retryWithDelay()">
+                            <i class="fas fa-redo"></i> Спробувати знову
+                        </button>
+                        <a href="/" class="btn btn-outline-primary">
+                            <i class="fas fa-home"></i> Головна сторінка
+                        </a>
+                        <a href="/results" class="btn btn-outline-info">
+                            <i class="fas fa-chart-bar"></i> Результати
+                        </a>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <small class="text-muted">
+                            Автоматична спроба оновлення через <span id="countdown">30</span> секунд...
+                        </small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-question-circle"></i> Що можна зробити зараз?</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-start">
+                        <div class="col-md-6">
+                            <h6>Переглянути наявні дані:</h6>
+                            <ul>
+                                <li><a href="/results" class="text-decoration-none">Попередні результати аналізів</a></li>
+                                <li><a href="/" class="text-decoration-none">Збережені конфігурації</a></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Підготувати новий аналіз:</h6>
+                            <ul>
+                                <li><a href="/config/new" class="text-decoration-none">Створити нову конфігурацію</a></li>
+                                <li><a href="/api/analysis/docs" class="text-decoration-none">Переглянути API документацію</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let retryTimeout;
+let countdownInterval;
+let retryCount = 0;
+const maxRetries = 3;
+
+function startCountdown() {
+    let seconds = 30;
+    const countdownElement = document.getElementById('countdown');
+    
+    countdownInterval = setInterval(() => {
+        seconds--;
+        countdownElement.textContent = seconds;
+        
+        if (seconds <= 0) {
+            clearInterval(countdownInterval);
+            retryWithDelay();
+        }
+    }, 1000);
+}
+
+function retryWithDelay() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+    
+    if (retryCount < maxRetries) {
+        retryCount++;
+        showNotification(`Спроба ${retryCount}/${maxRetries} - перезавантаження...`, 'info');
+        
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    } else {
+        showNotification('Досягнуто максимальну кількість спроб. Спробуйте пізніше.', 'warning');
+        document.querySelector('.mt-4 small').innerHTML = 
+            '<span class="text-danger">Автоматичні спроби призупинено. Оновіть сторінку вручну.</span>';
+    }
+}
+
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show notification`;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    
+    notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check' : type === 'danger' ? 'exclamation-triangle' : type === 'warning' ? 'exclamation-circle' : 'info'}"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+// Починаємо відлік при завантаженні сторінки
+document.addEventListener('DOMContentLoaded', function() {
+    startCountdown();
+});
+
+// Очищення таймерів при закритті сторінки
+window.addEventListener('beforeunload', function() {
+    if (retryTimeout) clearTimeout(retryTimeout);
+    if (countdownInterval) clearInterval(countdownInterval);
+});
+</script>
+{% endblock %}
