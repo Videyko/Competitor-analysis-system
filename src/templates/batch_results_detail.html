@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+
+{% block title %}Детальні результати - {{ batch.config_name }}{% endblock %}
+{% block page_type %}results{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-chart-bar"></i> {{ batch.config_name }} - Детальні результати</h1>
+                <div>
+                    <a href="/batch/{{ batch.id }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Назад
+                    </a>
+                    <a href="/batch/{{ batch.id }}/download" class="btn btn-primary">
+                        <i class="fas fa-download"></i> Завантажити Excel
+                    </a>
+                </div>
+            </div>
+
+            <!-- Загальна статистика -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="stat-card neutral">
+                        <div class="stat-number">{{ batch.total_sites }}</div>
+                        <div class="stat-label">Всього сайтів</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card positive">
+                        <div class="stat-number">{{ batch.completed_sites }}</div>
+                        <div class="stat-label">Завершено успішно</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card negative">
+                        <div class="stat-number">{{ batch.failed_sites }}</div>
+                        <div class="stat-label">Помилок</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card neutral">
+                        <div class="stat-number">{{ detailed_results|length }}</div>
+                        <div class="stat-label">Доступних результатів</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Загальна статистика по ключових словах -->
+            {% if detailed_results %}
+            {% set all_positive_matches = [] %}
+            {% set all_negative_matches = [] %}
+            {% for site_url, result in detailed_results.items() %}
+                {% for match in result.positive_matches %}
+                    {{ all_positive_matches.append(match) or '' }}
+                {% endfor %}
+                {% for match in result.negative_matches %}
+                    {{ all_negative_matches.append(match) or '' }}
+                {% endfor %}
+            {% endfor %}
+
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h5><i class="fas fa-thumbs-up"></i> Позитивні збіги по всіх сайтах</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="stat-card positive text-center">
+                                <div class="stat-number">{{ all_positive_matches|length }}</div>
+                                <div class="stat-label">Загальна кількість збігів</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-danger text-white">
+                            <h5><i class="fas fa-thumbs-down"></i> Негативні збіги по всіх сайтах</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="stat-card negative text-center">
+                                <div class="stat-number">{{ all_negative_matches|length }}</div>
+                                <div class="stat-label">Загальна кількість збігів</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Детальні результати по кожному сайту -->
+            {% if detailed_results %}
+                {% for site_url, result in detailed_results.items() %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas fa-globe"></i>
+                                <a href="{{ site_url }}" target="_blank" class="text-decoration-none">
+                                    {{ site_url }}
+                                </a>
+                            </h5>
+                            <div>
+                                <span class="badge bg-success me-2">
+                                    {{ result.positive_matches|length }} позитивних
+                                </span>
+                                <span class="badge bg-danger me-2">
+                                    {{ result.negative_matches|length }} негативних
+                                </span>
+                                <a href="/result/{{ result.task_id }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                    <i class="fas fa-external-link-alt"></i> Детально
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 text-center">
+                                <strong>{{ result.pages_analyzed }}</strong><br>
+                                <small class="text-muted">сторінок проаналізовано</small>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <strong class="text-success">{{ result.positive_matches|length }}</strong><br>
+                                <small class="text-muted">позитивних збігів</small>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <strong class="text-danger">{{ result.negative_matches|length }}</strong><br>
+                                <small class="text-muted">негативних збігів</small>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <strong>{{ result.analysis_time|round(1) }}с</strong><br>
+                                <small class="text-muted">час аналізу</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Позитивні результати (топ 5) -->
+                        {% if result.positive_matches %}
+                        <h6 class="text-success mt-3">Топ позитивних збігів:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Ключове слово</th>
+                                        <th>URL</th>
+                                        <th>Кількість</th>
+                                        <th>Контекст</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for match in result.positive_matches[:5] %}
+                                    <tr>
+                                        <td><span class="badge bg-success">{{ match.keyword }}</span></td>
+                                        <td>
+                                            <a href="{{ match.url }}" target="_blank" class="text-decoration-none text-primary">
+                                                {{ match.url|truncate(50) }}
+                                            </a>
+                                        </td>
+                                        <td><strong>{{ match.count }}</strong></td>
+                                        <td><small class="text-muted">{{ match.context|truncate(100) }}</small></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if result.positive_matches|length > 5 %}
+                        <small class="text-muted">
+                            ... та ще {{ result.positive_matches|length - 5 }} збігів. 
+                            <a href="/result/{{ result.task_id }}" target="_blank">Переглянути всі</a>
+                        </small>
+                        {% endif %}
+                        {% endif %}
+                        
+                        <!-- Негативні результати (топ 5) -->
+                        {% if result.negative_matches %}
+                        <h6 class="text-danger mt-3">Негативні збіги:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Ключове слово</th>
+                                        <th>URL</th>
+                                        <th>Кількість</th>
+                                        <th>Контекст</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for match in result.negative_matches[:5] %}
+                                    <tr>
+                                        <td><span class="badge bg-danger">{{ match.keyword }}</span></td>
+                                        <td>
+                                            <a href="{{ match.url }}" target="_blank" class="text-decoration-none text-primary">
+                                                {{ match.url|truncate(50) }}
+                                            </a>
+                                        </td>
+                                        <td><strong>{{ match.count }}</strong></td>
+                                        <td><small class="text-muted">{{ match.context|truncate(100) }}</small></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if result.negative_matches|length > 5 %}
+                        <small class="text-muted">
+                            ... та ще {{ result.negative_matches|length - 5 }} збігів. 
+                            <a href="/result/{{ result.task_id }}" target="_blank">Переглянути всі</a>
+                        </small>
+                        {% endif %}
+                        {% endif %}
+                        
+                        <!-- ШІ аналіз (коротко) -->
+                        {% if result.ai_analysis %}
+                        <div class="mt-3">
+                            <h6><i class="fas fa-robot"></i> ШІ Аналіз:</h6>
+                            <div class="alert alert-light">
+                                <small>{{ result.ai_analysis|truncate(200) }}</small>
+                                <br>
+                                <a href="/result/{{ result.task_id }}" target="_blank" class="btn btn-sm btn-outline-primary mt-2">
+                                    Повний ШІ аналіз
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Немає доступних результатів.</strong>
+                Можливо, аналіз ще виконується або завершився з помилками.
+            </div>
+            {% endif %}
+
+            <!-- Провалені аналізи -->
+            {% set failed_tasks = [] %}
+            {% for site_url, task_info in batch.analysis_tasks.items() %}
+                {% if task_info.status == 'failed' %}
+                    {{ failed_tasks.append(task_info) or '' }}
+                {% endif %}
+            {% endfor %}
+
+            {% if failed_tasks %}
+            <div class="card mt-4">
+                <div class="card-header bg-danger text-white">
+                    <h5><i class="fas fa-exclamation-triangle"></i> Провалені аналізи</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Сайт</th>
+                                    <th>Помилка</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for task in failed_tasks %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ task.site_url }}" target="_blank" class="text-decoration-none">
+                                            {{ task.site_url }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <small class="text-danger">{{ task.get('error', 'Невідома помилка') }}</small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Інформація про пакет -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Інформація про аналіз</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong>ID пакету:</strong> <code>{{ batch.id }}</code></p>
+                            <p><strong>Створено:</strong> {{ batch.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                            <p><strong>Статус:</strong> 
+                                <span class="badge bg-{% if batch.status == 'completed' %}success{% elif batch.status == 'failed' %}danger{% else %}warning{% endif %}">
+                                    {{ batch.status|upper }}
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Всього сайтів:</strong> {{ batch.total_sites }}</p>
+                            <p><strong>Успішно завершено:</strong> {{ batch.completed_sites }}</p>
+                            <p><strong>З помилками:</strong> {{ batch.failed_sites }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            {% if batch.custom_message %}
+                            <p><strong>Додаткове повідомлення:</strong></p>
+                            <p class="text-muted">{{ batch.custom_message }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Функція для копіювання task ID
+function copyTaskId(taskId) {
+    navigator.clipboard.writeText(taskId).then(() => {
+        showNotification('Task ID скопійовано в буфер обміну', 'success');
+    }).catch(() => {
+        showNotification('Помилка копіювання', 'danger');
+    });
+}
+
+// Функція для показу уведомлень
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show`;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    
+    notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check' : type === 'danger' ? 'exclamation-triangle' : 'info'}"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}
