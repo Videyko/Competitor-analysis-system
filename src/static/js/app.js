@@ -10,6 +10,7 @@ class CompetitorAnalysisApp {
         this.setupTooltips();
         this.setupAutoRefresh();
         this.setupFormValidation();
+        this.loadAutoSavedData();
     }
 
     setupEventListeners() {
@@ -67,6 +68,9 @@ class CompetitorAnalysisApp {
             case 'results':
                 this.initResultsPage();
                 break;
+            case 'result':
+                this.initResultPage();
+                break;
         }
     }
 
@@ -98,6 +102,12 @@ class CompetitorAnalysisApp {
         // Ініціалізація сторінки результатів
         this.setupResultFilters();
         this.setupPagination();
+    }
+
+    initResultPage() {
+        // Ініціалізація сторінки окремого результату
+        this.setupResultActions();
+        this.setupTableSorting();
     }
 
     setupTooltips() {
@@ -310,7 +320,7 @@ class CompetitorAnalysisApp {
         const statusElement = e.target.closest('.status-container');
 
         try {
-            const response = await fetch(`/status/${taskId}`);
+            const response = await fetch(`/api/analysis/status/${taskId}`);
             const data = await response.json();
             
             this.updateStatusDisplay(statusElement, data);
@@ -340,53 +350,213 @@ class CompetitorAnalysisApp {
         }
     }
 
+    // 🆕 ВИПРАВЛЕНА ФУНКЦІЯ - Перегляд результату
     async viewResult(e) {
         e.preventDefault();
         
         const taskId = e.target.dataset.taskId;
-        const modal = document.getElementById('resultModal');
+
+        try {
+            // Спочатку перевіряємо статус
+            const statusResponse = await fetch(`/api/analysis/status/${taskId}`);
+            const statusData = await statusResponse.json();
+            
+            if (statusData.status === 'completed') {
+                // Відкриваємо результат в новій вкладці
+                window.open(`/result/${taskId}`, '_blank');
+            } else if (statusData.status === 'running' || statusData.status === 'pending') {
+                // Відкриваємо сторінку очікування
+                window.open(`/result/${taskId}`, '_blank');
+            } else if (statusData.status === 'failed') {
+                this.showError(`Аналіз провалився: ${statusData.message || 'Невідома помилка'}`);
+            }
+        } catch (error) {
+            this.showError('Помилка завантаження результату: ' + error.message);
+        }
+    }
+
+    // 🆕 НОВА ФУНКЦІЯ - Завантаження результату
+    async downloadResult(taskId) {
+        try {
+            this.showInfo('Підготовка файлу для завантаження...');
+            
+            const response = await fetch(`/result/${taskId}/download`);
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `analysis_result_${taskId.substring(0, 8)}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                this.showSuccess('Файл завантажено');
+            } else if (response.status === 404) {
+                this.showError('Результат не знайдено');
+            } else if (response.status === 202) {
+                this.showWarning('Аналіз ще не завершено. Спробуйте пізніше.');
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Помилка завантаження:', error);
+            this.showError('Помилка завантаження файлу: ' + error.message);
+        }
+    }
+
+    // 🆕 НОВА ФУНКЦІЯ - Перегляд детальних результатів пакету
+    viewBatchResults(batchId) {
+        window.location.href = `/batch/${batchId}/results`;
+    }
+
+    // 🆕 ВИПРАВЛЕНА ФУНКЦІЯ - Показ результатів в модальному вікні
+    async showResultModal(taskId) {
+        const modal = document.getElementById('resultModal') || this.createResultModal();
         const modalBody = modal.querySelector('.modal-body');
 
         try {
             this.showModalLoading(modalBody);
             
             const response = await fetch(`/api/analysis/result/${taskId}`);
-            const data = await response.json();
             
-            this.displayResultInModal(modalBody, data);
+            if (response.ok) {
+                const data = await response.json();
+                this.displayResultInModal(modalBody, data);
+            } else if (response.status === 202) {
+                modalBody.innerHTML = `
+                    <div class="alert alert-warning text-center">
+                        <i class="fas fa-clock"></i>
+                        <h5>Аналіз ще виконується</h5>
+                        <p>Результат буде доступний після завершення аналізу.</p>
+                        <a href="/result/${taskId}" class="btn btn-primary" target="_blank">
+                            Відкрити сторінку очікування
+                        </a>
+                    </div>
+                `;
+            } else if (response.status === 404) {
+                modalBody.innerHTML = `
+                    <div class="alert alert-danger text-center">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h5>Результат не знайдено</h5>
+                        <p>Можливо, результат був видалений або ще не створений.</p>
+                    </div>
+                `;
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
             
             const modalInstance = new bootstrap.Modal(modal);
             modalInstance.show();
         } catch (error) {
-            this.showError('Помилка завантаження результату');
+            this.showError('Помилка завантаження результату: ' + error.message);
         }
+    }
+
+    createResultModal() {
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'resultModal';
+        modal.tabIndex = -1;
+        modal.innerHTML = `
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Результат аналізу</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body"></div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        return modal;
     }
 
     displayResultInModal(container, resultData) {
         container.innerHTML = `
-            <h6>Сайт: ${resultData.site_url}</h6>
-            <hr>
-            <div class="row">
-                <div class="col-md-6">
-                    <h6 class="text-success">Позитивні збіги: ${resultData.positive_matches.length}</h6>
-                    <ul class="list-unstyled">
-                        ${resultData.positive_matches.slice(0, 5).map(match => 
-                            `<li><strong>${match.keyword}</strong> (${match.count})</li>`
-                        ).join('')}
-                    </ul>
-                </div>
-                <div class="col-md-6">
-                    <h6 class="text-danger">Негативні збіги: ${resultData.negative_matches.length}</h6>
-                    <ul class="list-unstyled">
-                        ${resultData.negative_matches.slice(0, 5).map(match => 
-                            `<li><strong>${match.keyword}</strong> (${match.count})</li>`
-                        ).join('')}
-                    </ul>
-                </div>
+            <div class="mb-3">
+                <h6>Сайт: <a href="${resultData.site_url}" target="_blank" class="text-decoration-none">${resultData.site_url}</a></h6>
+                <small class="text-muted">Task ID: ${resultData.task_id}</small>
             </div>
             <hr>
-            <p><strong>Сторінок проаналізовано:</strong> ${resultData.pages_analyzed}</p>
-            <p><strong>Час аналізу:</strong> ${resultData.analysis_time.toFixed(1)} секунд</p>
+            <div class="row mb-3 text-center">
+                <div class="col-md-3">
+                    <div class="h4 text-primary">${resultData.pages_analyzed}</div>
+                    <small class="text-muted">Сторінок проаналізовано</small>
+                </div>
+                <div class="col-md-3">
+                    <div class="h4 text-success">${resultData.positive_matches.length}</div>
+                    <small class="text-muted">Позитивних збігів</small>
+                </div>
+                <div class="col-md-3">
+                    <div class="h4 text-danger">${resultData.negative_matches.length}</div>
+                    <small class="text-muted">Негативних збігів</small>
+                </div>
+                <div class="col-md-3">
+                    <div class="h4 text-info">${resultData.analysis_time.toFixed(1)}с</div>
+                    <small class="text-muted">Час аналізу</small>
+                </div>
+            </div>
+            
+            ${resultData.positive_matches.length > 0 ? `
+            <h6 class="text-success">Позитивні збіги (топ 5):</h6>
+            <div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">
+                ${resultData.positive_matches.slice(0, 5).map(match => `
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1"><span class="badge bg-success">${match.keyword}</span></h6>
+                            <small><strong>${match.count}</strong> разів</small>
+                        </div>
+                        <p class="mb-1">
+                            <small>
+                                <a href="${match.url}" target="_blank" class="text-decoration-none">
+                                    <i class="fas fa-external-link-alt"></i> ${match.url.length > 80 ? match.url.substring(0, 80) + '...' : match.url}
+                                </a>
+                            </small>
+                        </p>
+                        <small class="text-muted">${match.context}</small>
+                    </div>
+                `).join('')}
+            </div>
+            ${resultData.positive_matches.length > 5 ? `<p><small class="text-muted">... та ще ${resultData.positive_matches.length - 5} збігів</small></p>` : ''}
+            ` : '<div class="alert alert-warning"><i class="fas fa-search"></i> Позитивні ключові слова не знайдені</div>'}
+            
+            ${resultData.negative_matches.length > 0 ? `
+            <h6 class="text-danger">Негативні збіги:</h6>
+            <div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">
+                ${resultData.negative_matches.slice(0, 5).map(match => `
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1"><span class="badge bg-danger">${match.keyword}</span></h6>
+                            <small><strong>${match.count}</strong> разів</small>
+                        </div>
+                        <p class="mb-1">
+                            <small>
+                                <a href="${match.url}" target="_blank" class="text-decoration-none">
+                                    <i class="fas fa-external-link-alt"></i> ${match.url.length > 80 ? match.url.substring(0, 80) + '...' : match.url}
+                                </a>
+                            </small>
+                        </p>
+                        <small class="text-muted">${match.context}</small>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            <div class="d-flex justify-content-center gap-2 mt-3">
+                <a href="/result/${resultData.task_id}" class="btn btn-primary" target="_blank">
+                    <i class="fas fa-external-link-alt"></i> Детальний перегляд
+                </a>
+                <button class="btn btn-outline-primary" onclick="downloadResult('${resultData.task_id}')">
+                    <i class="fas fa-download"></i> Завантажити Excel
+                </button>
+            </div>
         `;
     }
 
@@ -474,7 +644,7 @@ class CompetitorAnalysisApp {
                 this.updateBatchDisplay(data);
                 
                 // Продовжуємо оновлення якщо аналіз ще виконується
-                if (data.status === 'running') {
+                if (data.status === 'running' || data.status === 'pending') {
                     setTimeout(updateProgress, 10000); // Кожні 10 секунд
                 }
             } catch (error) {
@@ -521,14 +691,54 @@ class CompetitorAnalysisApp {
         return colors[status] || 'secondary';
     }
 
+    // 🆕 НОВІ ФУНКЦІЇ ДЛЯ РОБОТИ З РЕЗУЛЬТАТАМИ
+    setupResultActions() {
+        // Налаштування дій для сторінки результатів
+        const copyButtons = document.querySelectorAll('[data-copy]');
+        copyButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const text = button.dataset.copy;
+                this.copyToClipboard(text);
+            });
+        });
+    }
+
+    setupTableSorting() {
+        // Простий пошук в таблицях
+        const tables = document.querySelectorAll('table');
+        tables.forEach((table, index) => {
+            this.addTableSearch(table, `search_${index}`);
+        });
+    }
+
+    addTableSearch(table, searchId) {
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'mb-3';
+        searchContainer.innerHTML = `
+            <input type="text" class="form-control" id="${searchId}" placeholder="Пошук в таблиці...">
+        `;
+        
+        table.parentNode.insertBefore(searchContainer, table);
+        
+        const searchInput = document.getElementById(searchId);
+        searchInput.addEventListener('input', () => {
+            const searchTerm = searchInput.value.toLowerCase();
+            const rows = table.querySelectorAll('tbody tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        });
+    }
+
+    // 🆕 ФУНКЦІЇ ПОВІДОМЛЕНЬ
     showLoading() {
-        // Показ індикатора завантаження
         const loadingOverlay = document.getElementById('loadingOverlay') || this.createLoadingOverlay();
         loadingOverlay.style.display = 'flex';
     }
 
     hideLoading() {
-        // Приховування індикатора завантаження
         const loadingOverlay = document.getElementById('loadingOverlay');
         if (loadingOverlay) {
             loadingOverlay.style.display = 'none';
@@ -559,6 +769,10 @@ class CompetitorAnalysisApp {
         this.showNotification(message, 'danger');
     }
 
+    showWarning(message) {
+        this.showNotification(message, 'warning');
+    }
+
     showInfo(message) {
         this.showNotification(message, 'info');
     }
@@ -571,7 +785,9 @@ class CompetitorAnalysisApp {
         notification.style.top = '20px';
         notification.style.right = '20px';
         notification.style.zIndex = '9999';
+        notification.style.minWidth = '350px';
         notification.innerHTML = `
+            <i class="fas fa-${this.getNotificationIcon(type)}"></i>
             ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
@@ -586,15 +802,85 @@ class CompetitorAnalysisApp {
         }, 5000);
     }
 
+    getNotificationIcon(type) {
+        const icons = {
+            'success': 'check-circle',
+            'danger': 'exclamation-triangle',
+            'warning': 'exclamation-circle',
+            'info': 'info-circle'
+        };
+        return icons[type] || 'info-circle';
+    }
+
+    copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            this.showSuccess('Скопійовано в буфер обміну');
+        }).catch(() => {
+            this.showError('Помилка копіювання');
+        });
+    }
+
     // Ініціалізація при завантаженні сторінки
     static init() {
         return new CompetitorAnalysisApp();
     }
 }
 
+// 🆕 ГЛОБАЛЬНІ ФУНКЦІЇ ДЛЯ ВИКОРИСТАННЯ В ШАБЛОНАХ
+
+// Показ результатів
+function showResultDetails(taskId) {
+    window.open(`/result/${taskId}`, '_blank');
+}
+
+// Завантаження результату
+function downloadResult(taskId) {
+    const app = window.app || new CompetitorAnalysisApp();
+    app.downloadResult(taskId);
+}
+
+// Перегляд детальних результатів пакету
+function viewBatchResults(batchId) {
+    window.location.href = `/batch/${batchId}/results`;
+}
+
+// Копіювання в буфер
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('Скопійовано в буфер обміну', 'success');
+    }).catch(() => {
+        showNotification('Помилка копіювання', 'danger');
+    });
+}
+
+// Показ уведомлень
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show`;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    
+    notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check' : type === 'danger' ? 'exclamation-triangle' : type === 'warning' ? 'exclamation-circle' : 'info'}"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
 // Ініціалізація застосунку
 document.addEventListener('DOMContentLoaded', () => {
-    CompetitorAnalysisApp.init();
+    window.app = CompetitorAnalysisApp.init();
 });
 
 // Утилітарні функції
@@ -622,12 +908,9 @@ const Utils = {
         }
     },
 
-    copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(() => {
-            app.showSuccess('Скопійовано в буфер обміну');
-        }).catch(() => {
-            app.showError('Помилка копіювання');
-        });
+    truncateText(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
     },
 
     downloadJson(data, filename) {
